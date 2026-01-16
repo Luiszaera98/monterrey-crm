@@ -1,103 +1,118 @@
 # Manual de Despliegue - Monterrey CRM
 
-Este manual explica cómo instalar y ejecutar el sistema Monterrey CRM en una computadora o servidor completamente nuevo, **sin necesidad de instalar Node.js ni MongoDB manualmente**.
+Este manual explica cómo instalar y ejecutar el sistema Monterrey CRM en un servidor o computadora nueva. El sistema utiliza **Docker**, lo que facilita la instalación al incluir todas las dependencias (Base de datos, Node.js, etc.) en contenedores.
 
-El sistema utiliza **Docker**, lo que paquetea todo lo necesario (Base de datos, Servidor Web, Librerías) en contenedores listos para usar.
+> **RECOMENDACIÓN:** Para un servidor dedicado (CPU viejo o nuevo) que debe ser estable y rápido, se recomienda encarecidamente usar la **Opción A (Ubuntu Server)**.
 
 ---
 
-## FASE 1: Preparación del Servidor (Nueva PC)
+## OPCIÓN A: Instalación en Ubuntu Server (Recomendada)
+*Ideal para servidores dedicados, CPUs viejos, bajo consumo de recursos y estabilidad.*
 
-Solo necesitas instalar dos programas en la computadora nueva:
+### 1. Preparación del Sistema Operativo
+Se asume que ya instalaste Ubuntu Server en la máquina.
 
-### 1. Instalar Docker
-Docker es el motor que ejecutará el sistema.
-
-*   **Si usas Windows:**
-    1.  Descarga **Docker Desktop**: [https://www.docker.com/products/docker-desktop/](https://www.docker.com/products/docker-desktop/)
-    2.  Instálalo (asegura marcar la opción de WSL 2 si te la pide).
-    3.  Abre Docker Desktop y espera a que el icono de la ballena en la barra de tareas esté verde o diga "Engine Running".
-
-*   **Si usas Linux (Ubuntu/Debian):**
+1.  **Accede a la terminal** del servidor (ya sea directamente o vía SSH).
+2.  **Actualiza el sistema:**
     ```bash
+    sudo apt update && sudo apt upgrade -y
+    ```
+3.  **Instala Docker y Git:**
+    ```bash
+    # Instalar Docker con el script automático oficial
     curl -fsSL https://get.docker.com -o get-docker.sh
     sudo sh get-docker.sh
+
+    # Instalar Git
+    sudo apt install git -y
+    ```
+4.  **(Opcional) Instalar Tailscale para acceso remoto seguro:**
+    Si deseas administrar este servidor desde fuera de la red local sin abrir puertos:
+    ```bash
+    curl -fsSL https://tailscale.com/install.sh | sh
+    sudo tailscale up
+    # Sigue el link que aparece para autenticarte con tu cuenta
     ```
 
-### 2. Instalar Git
-Necesario para descargar el código del sistema.
+### 2. Descargar e Instalar el CRM
+1.  **Crear carpeta y descargar código:**
+    ```bash
+    mkdir monterrey-crm
+    cd monterrey-crm
+    # Te pedirá usuario (tu correo/user) y contraseña (tu Token de Acceso Personal)
+    git clone https://github.com/Luiszaera98/monterrey-crm.git .
+    ```
 
-*   **Windows:** Descarga e instala desde [https://git-scm.com/downloads](https://git-scm.com/downloads).
+2.  **Desplegar (Iniciar el sistema):**
+    ```bash
+    # Necesitas permisos de superusuario (sudo) para docker en Linux por defecto
+    sudo docker compose -f docker-compose.prod.yml up -d --build
+    ```
+    *Espera unos minutos mientras descarga y compila todo.*
 
----
+3.  **Verificar que esté corriendo:**
+    ```bash
+    sudo docker compose -f docker-compose.prod.yml ps
+    ```
 
-## FASE 2: Instalación del Sistema
+______________________________________________________________________
 
-1.  **Crear una carpeta para el proyecto:**
-    Crea una carpeta en el Escritorio o Documentos llamada `monterrey-crm`.
+## OPCIÓN B: Instalación en Windows
+*Úsalo si necesitas usar la PC para otras cosas gráficas además de ser servidor, o si no te sientes cómodo con Linux.*
 
-2.  **Abrir la Terminal:**
-    *   En Windows: Entra a esa carpeta, haz clic derecho y elige "Open Git Bash Here" (o usa PowerShell).
+### 1. Prerrequisitos
+1.  Descarga e instala **Docker Desktop para Windows**: [https://www.docker.com/products/docker-desktop/](https://www.docker.com/products/docker-desktop/)
+2.  Descarga e instala **Git**: [https://git-scm.com/downloads](https://git-scm.com/downloads)
+3.  Abre Docker Desktop y asegúrate de que esté corriendo (icono verde).
 
-3.  **Descargar el Código:**
-    Escribe el siguiente comando (te pedirá tu usuario y contraseña de GitHub):
+### 2. Descargar e Instalar el CRM
+1.  Crea una carpeta en el Escritorio llamada `monterrey-crm`.
+2.  Entra a la carpeta, haz clic derecho y selecciona **"Open Git Bash Here"**.
+3.  **Descargar código:**
     ```bash
     git clone https://github.com/Luiszaera98/monterrey-crm.git .
     ```
-    *(Nota el punto al final para que se baje en la carpeta actual)*.
-
-4.  **Configurar Variables de Entorno (Opcional):**
-    El sistema ya viene configurado para producción, pero si necesitas cambiar algo, puedes crear un archivo `.env.local` basado en el ejemplo, pero **no es estrictamente necesario** para que arranque la primera vez, ya que Docker maneja la conexión a la base de datos interna.
-
----
-
-## FASE 3: Ejecución (Despliegue)
-
-Este es el paso mágico. Docker descargará e instalará todo automáticamente.
-
-1.  En la terminal (dentro de la carpeta del proyecto), ejecuta:
-
+4.  **Desplegar (Iniciar el sistema):**
+    En la misma terminal de Git Bash:
     ```bash
     docker compose -f docker-compose.prod.yml up -d --build
     ```
 
-    *   **¿Qué hace esto?**
-        *   Descarga la base de datos MongoDB.
-        *   Compila la aplicación Next.js optimizada.
-        *   Inicia todo en segundo plano.
+______________________________________________________________________
 
-2.  **Espera unos minutos.** La primera vez toma tiempo descargar y compilar.
+## Cómo Acceder al Sistema
 
-3.  **Verificar:**
-    Ejecuta:
-    ```bash
-    docker compose -f docker-compose.prod.yml ps
-    ```
-    Deberías ver que `monterrey_crm_app` y `monterrey_mongodb` están en estado "Up".
+Una vez instalado (en Ubuntu o Windows), el acceso es igual:
 
----
+### Desde la misma PC (Localhost):
+Abre el navegador y ve a:
+`http://localhost:3000`
 
-## FASE 4: Usar el Sistema
+### Desde otros dispositivos en la red (LAN):
+1.  Averigua la IP del servidor:
+    *   **Ubuntu:** Escribe `ip a` en la terminal (busca algo como `192.168.1.X`).
+    *   **Windows:** Escribe `ipconfig` en la terminal (busca "IPv4 Address").
+2.  En el otro dispositivo (celular, laptop), escribe en el navegador:
+    `http://192.168.1.X:3000` (Reemplaza X por el número correcto).
 
-1.  Abre el navegador (Chrome, Edge).
-2.  Escribe: `http://localhost:3000`
-3.  ¡Listo!
-
-**Para acceder desde otros dispositivos en la misma red:**
-1.  Averigua la IP de la computadora servidor (en terminal escribe `ipconfig` y busca "IPv4 Address", ej: `192.168.1.15`).
-2.  En el celular u otra laptop escribe: `http://192.168.1.15:3000`
+**Nota:** Si usaste la Opción A con **Tailscale**, puedes acceder remotamente (fuera de casa) usando la IP que te da Tailscale (ej. `http://100.x.x.x:3000`).
 
 ---
 
-## Mantenimiento
+## Mantenimiento y Actualizaciones
 
-**Si subes cambios a GitHub y quieres actualizar el servidor:**
+Para actualizar el sistema cuando subas cambios a GitHub:
+
+**En Ubuntu:**
 ```bash
+cd ~/monterrey-crm
 git pull
-docker compose -f docker-compose.prod.yml up -d --build
+sudo docker compose -f docker-compose.prod.yml up -d --build
 ```
 
-**Si necesitas reiniciar el servidor:**
+**En Windows:**
 ```bash
-docker compose -f docker-compose.prod.yml restart
+# Abre Git Bash en la carpeta
+git pull
+docker compose -f docker-compose.prod.yml up -d --build
 ```
