@@ -48,9 +48,19 @@ Simplemente copia la carpeta entera de tu proyecto actual (asegúrate de **NO** 
 
 ## 3. Configuración Inicial
 
-1.  Una vez dentro de la carpeta del proyecto en la nueva PC, necesitas crear el archivo de variables de entorno si no existe.
-2.  Crea un archivo llamado `.env.local` (aunque para producción con Docker usaremos las variables definidas en `docker-compose.prod.yml`, es buena práctica tenerlo para referencias locales).
-    *   *Nota: En el archivo `docker-compose.prod.yml` ya se está definiendo `MONGODB_URI` automáticamente para que se conecte al contenedor de base de datos.*
+### Configuración de Seguridad (IMPORTANTE)
+
+1.  Una vez descargado el código, localiza el archivo `.env.example`.
+2.  Crea una copia de este archivo y llámala `.env`:
+    ```bash
+    cp .env.example .env
+    ```
+3.  Abre el archivo `.env` con un editor de texto (Bloc de notas, nano, etc.).
+4.  **Cambia las contraseñas por defecto:**
+    *   Modifica `DB_PASSWORD` por una contraseña segura.
+    *   Modifica `DB_USER` si lo deseas.
+    *   Guarda el archivo.
+    *   *El archivo `docker-compose.prod.yml` leerá automáticamente estas variables para configurar la base de datos y la conexión.*
 
 ---
 

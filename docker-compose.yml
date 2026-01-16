@@ -20,7 +20,7 @@ services:
     environment:
       - NODE_ENV=development
       - WATCHPACK_POLLING=true
-      - MONGODB_URI=mongodb://mongodb:27017/monterrey_crm
+      - MONGODB_URI=mongodb://${DB_USER:-admin}:${DB_PASSWORD:-password123}@mongodb:27017/monterrey_crm?authSource=admin
     command: npm run dev
     depends_on:
       - mongodb
@@ -30,11 +30,13 @@ services:
     container_name: monterrey_mongodb
     restart: always
     ports:
-      - "27017:27017"
+      - "127.0.0.1:27017:27017"
     volumes:
       - mongodb_data:/data/db
     environment:
       - MONGO_INITDB_DATABASE=monterrey_crm
+      - MONGO_INITDB_ROOT_USERNAME=${DB_USER:-admin}
+      - MONGO_INITDB_ROOT_PASSWORD=${DB_PASSWORD:-password123}
 
 volumes:
   node_modules:
