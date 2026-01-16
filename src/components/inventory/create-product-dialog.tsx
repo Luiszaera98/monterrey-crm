@@ -1,0 +1,276 @@
+"use client";
+
+import React, { useState, useTransition } from 'react';
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { PlusCircle } from 'lucide-react';
+import { createProduct } from '@/lib/actions/inventoryActions';
+import { getChorizoTypes, getUnitTypes } from '@/lib/actions/settingsActions';
+import { useToast } from '@/hooks/use-toast';
+import { ProductType } from '@/types';
+
+interface CreateProductDialogProps {
+    onProductCreated?: () => void;
+}
+
+export function CreateProductDialog({ onProductCreated }: CreateProductDialogProps) {
+    const [open, setOpen] = useState(false);
+    const [isPending, startTransition] = useTransition();
+    const { toast } = useToast();
+
+    // Form state
+    const [type, setType] = useState<ProductType>('Chorizo');
+    const [name, setName] = useState('');
+    const [customName, setCustomName] = useState(''); // For Materia Prima
+    const [price, setPrice] = useState('');
+    const [cost, setCost] = useState('');
+    const [stock, setStock] = useState('');
+    const [minStock, setMinStock] = useState('');
+    const [unit, setUnit] = useState('Unidad');
+    const [description, setDescription] = useState('');
+
+    // Dynamic Data
+    const [chorizoTypes, setChorizoTypes] = useState<string[]>([]);
+    const [unitTypes, setUnitTypes] = useState<string[]>([]);
+
+    // Fetch types when dialog opens
+    React.useEffect(() => {
+        if (open) {
+            getUnitTypes().then(setUnitTypes);
+            if (type === 'Chorizo') {
+                getChorizoTypes().then(setChorizoTypes);
+            }
+        }
+    }, [open, type]);
+
+    const resetForm = () => {
+        setType('Chorizo');
+        setName('');
+        setCustomName('');
+        setPrice('');
+        setCost('');
+        setStock('');
+        setMinStock('');
+        setUnit('Unidad');
+        setDescription('');
+    };
+
+    const handleSubmit = (e: React.FormEvent) => {
+        e.preventDefault();
+
+        const finalName = type === 'Chorizo' ? name : customName;
+
+        if (!finalName || !stock || !unit) {
+            toast({
+                title: "Error de validación",
+                description: "Por favor complete todos los campos requeridos.",
+                variant: "destructive",
+            });
+            return;
+        }
+
+        // Validation based on type
+        if (type === 'Chorizo' && !price) {
+            toast({ title: "Error", description: "El precio de venta es requerido para Chorizos.", variant: "destructive" });
+            return;
+        }
+        if (type === 'Materia Prima' && !cost) {
+            toast({ title: "Error", description: "El costo es requerido para Materia Prima.", variant: "destructive" });
+            return;
+        }
+
+        startTransition(async () => {
+            const result = await createProduct({
+                name: finalName,
+                type,
+                // SKU is auto-generated
+                // Category is auto-set to Type
+                price: parseFloat(price) || 0,
+                cost: parseFloat(cost) || 0,
+                stock: parseFloat(stock), // Changed to parseFloat
+                minStock: minStock ? parseFloat(minStock) : 0, // Changed to parseFloat
+                unit,
+                description,
+            });
+
+            if (result.success) {
+                toast({
+                    title: "Producto creado",
+                    description: `El producto ${finalName} ha sido creado exitosamente.`,
+                });
+                setOpen(false);
+                resetForm();
+                if (onProductCreated) {
+                    onProductCreated();
+                }
+            } else {
+                toast({
+                    title: "Error",
+                    description: result.message || "No se pudo crear el producto.",
+                    variant: "destructive",
+                });
+            }
+        });
+    };
+
+    return (
+        <Dialog open={open} onOpenChange={setOpen}>
+            <DialogTrigger asChild>
+                <Button className="bg-primary text-primary-foreground hover:bg-primary/90">
+                    <PlusCircle className="mr-2 h-5 w-5" /> Nuevo Producto
+                </Button>
+            </DialogTrigger>
+            <DialogContent className="sm:max-w-[500px]">
+                <DialogHeader>
+                    <DialogTitle>Crear Nuevo Producto</DialogTitle>
+                    <DialogDescription>
+                        Añada un nuevo ítem al inventario. El código SKU se generará automáticamente.
+                    </DialogDescription>
+                </DialogHeader>
+                <form onSubmit={handleSubmit} className="space-y-4 py-4">
+
+                    <div className="space-y-2">
+                        <Label htmlFor="type">Tipo de Producto *</Label>
+                        <Select value={type} onValueChange={(val) => {
+                            setType(val as ProductType);
+                            setName(''); // Reset name selection
+                            setCustomName('');
+                        }}>
+                            <SelectTrigger>
+                                <SelectValue placeholder="Seleccione tipo" />
+                            </SelectTrigger>
+                            <SelectContent>
+                                <SelectItem value="Chorizo">Chorizo (Producto Terminado)</SelectItem>
+                                <SelectItem value="Materia Prima">Materia Prima</SelectItem>
+                            </SelectContent>
+                        </Select>
+                    </div>
+
+                    <div className="space-y-2">
+                        <Label htmlFor="name">Nombre del Producto *</Label>
+                        {type === 'Chorizo' ? (
+                            <Select value={name} onValueChange={setName}>
+                                <SelectTrigger>
+                                    <SelectValue placeholder="Seleccione un producto" />
+                                </SelectTrigger>
+                                <SelectContent>
+                                    {chorizoTypes.map((chorizo) => (
+                                        <SelectItem key={chorizo} value={chorizo}>{chorizo}</SelectItem>
+                                    ))}
+                                </SelectContent>
+                            </Select>
+                        ) : (
+                            <Input
+                                id="customName"
+                                value={customName}
+                                onChange={(e) => setCustomName(e.target.value)}
+                                placeholder="Ej. Carne de Cerdo, Tripa, Especias"
+                                required
+                            />
+                        )}
+                    </div>
+
+                    <div className="space-y-2">
+                        <Label htmlFor="description">Descripción <span className="text-muted-foreground font-normal">(Opcional)</span></Label>
+                        <Input
+                            id="description"
+                            value={description}
+                            onChange={(e) => setDescription(e.target.value)}
+                            placeholder="Descripción detallada para la factura"
+                        />
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-4">
+                        <div className="space-y-2">
+                            <Label htmlFor="stock">Stock Inicial *</Label>
+                            <Input
+                                id="stock"
+                                type="number"
+                                step="0.01" // Allow decimals
+                                value={stock}
+                                onChange={(e) => setStock(e.target.value)}
+                                placeholder="0.00"
+                                required
+                            />
+                        </div>
+                        <div className="space-y-2">
+                            <Label htmlFor="unit">Tipo de Medida *</Label>
+                            <Select value={unit} onValueChange={setUnit}>
+                                <SelectTrigger>
+                                    <SelectValue placeholder="Seleccione unidad" />
+                                </SelectTrigger>
+                                <SelectContent>
+                                    {unitTypes.map((u) => (
+                                        <SelectItem key={u} value={u}>{u}</SelectItem>
+                                    ))}
+                                </SelectContent>
+                            </Select>
+                        </div>
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-4">
+                        {type === 'Chorizo' ? (
+                            <div className="space-y-2">
+                                <Label htmlFor="price">Precio de Venta *</Label>
+                                <div className="relative">
+                                    <span className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground">$</span>
+                                    <Input
+                                        id="price"
+                                        type="number"
+                                        step="0.01"
+                                        value={price}
+                                        onChange={(e) => setPrice(e.target.value)}
+                                        className="pl-7"
+                                        placeholder="0.00"
+                                        required
+                                    />
+                                </div>
+                            </div>
+                        ) : (
+                            <div className="space-y-2">
+                                <Label htmlFor="cost">Costo Unitario *</Label>
+                                <div className="relative">
+                                    <span className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground">$</span>
+                                    <Input
+                                        id="cost"
+                                        type="number"
+                                        step="0.01"
+                                        value={cost}
+                                        onChange={(e) => setCost(e.target.value)}
+                                        className="pl-7"
+                                        placeholder="0.00"
+                                        required
+                                    />
+                                </div>
+                            </div>
+                        )}
+
+                        <div className="space-y-2">
+                            <Label htmlFor="minStock">Stock Mínimo <span className="text-muted-foreground font-normal">(Opcional)</span></Label>
+                            <Input
+                                id="minStock"
+                                type="number"
+                                step="0.01" // Allow decimals
+                                value={minStock}
+                                onChange={(e) => setMinStock(e.target.value)}
+                                placeholder="0.00"
+                            />
+                        </div>
+                    </div>
+
+                    <DialogFooter className="pt-4">
+                        <Button type="button" variant="outline" onClick={() => setOpen(false)} disabled={isPending}>
+                            Cancelar
+                        </Button>
+                        <Button type="submit" disabled={isPending}>
+                            {isPending ? "Guardando..." : "Guardar Producto"}
+                        </Button>
+                    </DialogFooter>
+                </form>
+            </DialogContent>
+        </Dialog>
+    );
+}

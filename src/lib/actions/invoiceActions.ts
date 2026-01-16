@@ -1,0 +1,722 @@
+"use server";
+
+import dbConnect from '@/lib/db';
+import { Invoice as InvoiceModel, Product as ProductModel, Payment as PaymentModel, CreditNote as CreditNoteModel, Client as ClientModel, User as UserModel } from '@/models';
+import { Invoice, InvoiceStatus } from '@/types';
+import { revalidatePath } from 'next/cache';
+import { getNextNCF, syncNCFSequences } from './settingsActions';
+import mongoose from 'mongoose';
+import { runTransaction } from '@/lib/db';
+import { bulkUpdateStock, validateStockAvailability, StockItem } from '@/lib/inventoryUtils';
+
+// Helper to convert MongoDB document to Invoice type
+function mapInvoice(doc: any): Invoice {
+    return {
+        id: doc._id.toString(),
+        number: doc.number,
+        ncf: doc.ncf,
+        ncfType: doc.ncfType,
+        clientId: doc.clientId,
+        clientName: doc.clientName,
+        clientRnc: doc.clientRnc,
+        clientAddress: doc.clientAddress,
+        soldBy: doc.soldBy,
+        sellerEmail: doc.sellerEmail,
+        paymentTerms: doc.paymentTerms,
+        date: doc.date.toISOString(),
+        dueDate: doc.dueDate.toISOString(),
+        status: doc.status,
+        subtotal: doc.subtotal,
+        discount: doc.discount,
+        tax: doc.tax,
+        total: doc.total,
+        paidAmount: doc.paidAmount,
+        items: doc.items ? doc.items.map((item: any) => ({ ...item, id: item.id || item._id?.toString() })) : [],
+        payments: doc.payments,
+        creditNotes: doc.creditNotes,
+        notes: doc.notes,
+        createdAt: doc.createdAt.toISOString(),
+        updatedAt: doc.updatedAt.toISOString(),
+    };
+}
+
+export async function getInvoices(month?: string, year?: string, timezoneOffset?: number): Promise<Invoice[]> {
+    await dbConnect();
+    try {
+        let query: any = {};
+
+        if (month && year) {
+            // timezoneOffset is in minutes (e.g., 240 for UTC-4)
+            // We want start date to be 00:00:00 in the user's local time
+            // Local = UTC - Offset  =>  UTC = Local + Offset
+            const offsetMs = (timezoneOffset || 0) * 60 * 1000;
+
+            // Start of month in UTC
+            const startUTC = Date.UTC(parseInt(year), parseInt(month), 1);
+            // Adjust to user's local start of month (converted to UTC timestamp)
+            const startDate = new Date(startUTC + offsetMs);
+
+            // End of month in UTC
+            const endUTC = Date.UTC(parseInt(year), parseInt(month) + 1, 0, 23, 59, 59, 999);
+            // Adjust to user's local end of month
+            const endDate = new Date(endUTC + offsetMs);
+
+            query.date = { $gte: startDate, $lte: endDate };
+        }
+
+        const invoices = await InvoiceModel.find(query).select('-items').sort({ createdAt: -1 }).lean();
+        return invoices.map(mapInvoice);
+    } catch (error) {
+        console.error("Error fetching invoices:", error);
+        return [];
+    }
+}
+
+export async function getInvoiceById(id: string): Promise<Invoice | null> {
+    await dbConnect();
+    try {
+        // We explicitly do NOT exclude items here because we need them for the detail view
+        const invoice = await InvoiceModel.findById(id).lean();
+        return invoice ? mapInvoice(invoice) : null;
+    } catch (error) {
+        console.error("Error fetching invoice by id:", error);
+        return null;
+    }
+}
+
+async function generateInvoiceNumber(): Promise<string> {
+    const year = new Date().getFullYear();
+    const prefix = `FAC-${year}-`;
+
+    const invoices = await InvoiceModel.find({
+        number: { $regex: new RegExp(`^${prefix}`) }
+    }).select('number').lean();
+
+    let maxSequence = 0;
+
+    for (const inv of invoices) {
+        const parts = inv.number.split('-');
+        const sequence = parseInt(parts[parts.length - 1], 10);
+        if (!isNaN(sequence) && sequence > maxSequence) {
+            maxSequence = sequence;
+        }
+    }
+
+    const nextSequence = maxSequence + 1;
+    return `${prefix}${String(nextSequence).padStart(3, '0')}`;
+}
+
+export async function createInvoice(data: {
+    clientId: string;
+    clientName: string;
+    clientRnc?: string;
+    ncfType: string;
+    date: string;
+    dueDate: string;
+    items: { productId: string; productName: string; quantity: number; price: number; discount: number; }[];
+    discount: number;
+    tax: number;
+    notes?: string;
+    soldBy?: string;
+    sellerEmail?: string;
+    paymentTerms?: string;
+}): Promise<{ success: boolean; invoice?: Invoice; message?: string }> {
+    await dbConnect();
+
+    return runTransaction(async (session) => {
+        // 1. Validate Stock
+        const stockItems: StockItem[] = data.items.map(i => ({
+            productId: i.productId,
+            productName: i.productName,
+            quantity: i.quantity
+        }));
+
+        await validateStockAvailability(stockItems);
+
+        // 2. Calculate Totals
+        const productIds = data.items.map(i => i.productId);
+        const products = await ProductModel.find({ _id: { $in: productIds } }).session(session || null).lean();
+        const productMap = new Map(products.map(p => [p._id.toString(), p]));
+
+        const invoiceItems = data.items.map((item, index) => {
+            const product = productMap.get(item.productId);
+            const subtotal = item.quantity * item.price;
+            const discountAmount = (subtotal * item.discount) / 100;
+            const total = subtotal - discountAmount;
+
+            return {
+                id: String(index + 1),
+                productId: item.productId,
+                productName: item.productName,
+                description: product?.description,
+                quantity: item.quantity,
+                price: item.price,
+                discount: item.discount,
+                subtotal,
+                total
+            };
+        });
+
+        const itemsTotal = invoiceItems.reduce((sum, item) => sum + item.total, 0);
+        const generalDiscountAmount = (itemsTotal * data.discount) / 100;
+        const subtotal = itemsTotal - generalDiscountAmount;
+        const total = subtotal + data.tax;
+
+        // 3. Generate Numbers
+        const invoiceNumber = await generateInvoiceNumber();
+        const ncf = await getNextNCF(data.ncfType, session);
+
+        // 4. Create Invoice
+        const [newInvoice] = await InvoiceModel.create([{
+            number: invoiceNumber,
+            ncf,
+            ncfType: data.ncfType,
+            clientId: data.clientId,
+            clientName: data.clientName,
+            clientRnc: data.clientRnc,
+            soldBy: data.soldBy,
+            sellerEmail: data.sellerEmail,
+            paymentTerms: data.paymentTerms,
+            date: data.date,
+            dueDate: data.dueDate,
+            status: "Pendiente",
+            subtotal,
+            discount: data.discount,
+            tax: data.tax,
+            total,
+            paidAmount: 0,
+            items: invoiceItems,
+            notes: data.notes,
+            payments: [],
+            creditNotes: []
+        }], { session });
+
+        // 5. Update Inventory Stock (Bulk)
+        await bulkUpdateStock(stockItems, 'subtract', session);
+
+        return { success: true, invoice: mapInvoice(newInvoice.toObject()) };
+    }).catch(async (error) => {
+        console.error('Error creating invoice:', error);
+
+        if (error.code === 11000 && error.keyPattern && error.keyPattern.ncf) {
+            console.log("Duplicate NCF detected, attempting to sync...");
+            await syncNCFSequences();
+            return { success: false, message: "Error de secuencia NCF (duplicado), intente de nuevo." };
+        }
+
+        return { success: false, message: error.message || "Error al crear la factura" };
+    }).then(res => {
+        if (res.success) {
+            revalidatePath('/invoices');
+            revalidatePath('/inventory');
+        }
+        return res;
+    });
+}
+
+export async function updateInvoice(id: string, data: {
+    clientId: string;
+    clientName: string;
+    clientRnc?: string;
+    ncfType: string;
+    date: string;
+    dueDate: string;
+    status: string;
+    items: { productId: string; productName: string; quantity: number; price: number; discount: number; }[];
+    discount: number;
+    tax: number;
+    notes?: string;
+    paymentTerms?: string;
+    soldBy?: string;
+    sellerEmail?: string;
+}): Promise<{ success: boolean; invoice?: Invoice; message?: string }> {
+    await dbConnect();
+
+    return runTransaction(async (session) => {
+        const existingInvoice = await InvoiceModel.findById(id).session(session || null);
+        if (!existingInvoice) {
+            throw new Error("Factura no encontrada");
+        }
+
+        // 1. Revert Old Stock
+        const oldItems: StockItem[] = existingInvoice.items.map((i: any) => ({
+            productId: i.productId, quantity: i.quantity
+        }));
+        const newItems: StockItem[] = data.items.map(i => ({
+            productId: i.productId, quantity: i.quantity, productName: i.productName
+        }));
+
+        await bulkUpdateStock(oldItems, 'add', session);
+
+        // 2. Validate availability for New Items
+        // Since we are in a transaction, we should fetch current stock.
+        // Note: bulkUpdateStock used $inc, so the DB has the updated stock.
+        // We need to fetch it to validate.
+        if (session) {
+            const productIds = newItems.map(i => i.productId);
+            const products = await ProductModel.find({ _id: { $in: productIds } }).session(session).lean();
+            const productMap = new Map(products.map(p => [p._id.toString(), p]));
+            for (const item of newItems) {
+                const prod = productMap.get(item.productId);
+                if (prod && prod.stock < item.quantity) {
+                    throw new Error(`Stock insuficiente para ${item.productName} (después de devolución). Disp: ${prod.stock}`);
+                }
+            }
+        }
+
+        await bulkUpdateStock(newItems, 'subtract', session);
+
+        // Calculate item totals
+        const invoiceItems = await Promise.all(data.items.map(async (item, index) => {
+            // Re-fetch or reuse map if optimized. For now sticking to logic.
+            // We need product details for description if we don't have it.
+            // Assuming product data didn't change drastically.
+            const product = await ProductModel.findById(item.productId).session(session || null).lean();
+
+            const subtotal = item.quantity * item.price;
+            const discountAmount = (subtotal * item.discount) / 100;
+            const total = subtotal - discountAmount;
+
+            return {
+                id: String(index + 1),
+                productId: item.productId,
+                productName: item.productName,
+                description: product?.description,
+                quantity: item.quantity,
+                price: item.price,
+                discount: item.discount,
+                subtotal,
+                total
+            };
+        }));
+
+        const itemsTotal = invoiceItems.reduce((sum, item) => sum + item.total, 0);
+        const generalDiscountAmount = (itemsTotal * data.discount) / 100;
+        const subtotal = itemsTotal - generalDiscountAmount;
+        const total = subtotal + data.tax;
+
+        const updatedInvoice = await InvoiceModel.findByIdAndUpdate(
+            id,
+            {
+                clientId: data.clientId,
+                clientName: data.clientName,
+                clientRnc: data.clientRnc,
+                ncfType: data.ncfType,
+                date: data.date,
+                dueDate: data.dueDate,
+                status: data.status,
+                subtotal,
+                discount: data.discount,
+                tax: data.tax,
+                total,
+                items: invoiceItems,
+                notes: data.notes,
+                paymentTerms: data.paymentTerms,
+                soldBy: data.soldBy,
+                sellerEmail: data.sellerEmail,
+            },
+            { new: true, session }
+        ).lean();
+
+        return { success: true, invoice: mapInvoice(updatedInvoice) };
+
+    }).catch(error => {
+        console.error('Error updating invoice:', error);
+        return { success: false, message: error.message || "Error al actualizar la factura" };
+    }).then(res => {
+        if (res.success) {
+            revalidatePath('/invoices');
+        }
+        return res;
+    });
+}
+
+export async function deleteInvoiceAction(id: string): Promise<{ success: boolean; message?: string }> {
+    await dbConnect();
+
+    return runTransaction(async (session) => {
+        const invoice = await InvoiceModel.findById(id).session(session || null);
+        if (!invoice) {
+            throw new Error("Factura no encontrada");
+        }
+
+        // Restore stock for invoice items
+        const stockItems: StockItem[] = invoice.items.map((i: any) => ({
+            productId: i.productId, quantity: i.quantity
+        }));
+        await bulkUpdateStock(stockItems, 'add', session);
+
+        // Cascade delete Credit Notes (and revert their stock effect)
+        const creditNotes = await CreditNoteModel.find({ originalInvoiceId: id }).session(session || null);
+
+        for (const cn of creditNotes) {
+            // Revert credit note stock logic:
+            // Credit Notes ADDED back stock when created.
+            // If we delete the credit note, we should technically remove that stock again?
+            // Wait, "createCreditNote" calls "return stock".
+            // So if we delete the Credit Note as part of deleting the invoice...
+            // Logic: The Invoice Sale removed Stock (-10).
+            // Credit Note returned Stock (+10).
+            // Net Stock impact: 0.
+            // If we delete EVERYTHING:
+            // We revert Invoice Sale (+10).
+            // We revert Credit Note (+10 -> -10).
+            // Net impact: 0.
+            // So yes, we must revert the Credit Note effect.
+            // Credit note items:
+            const cnItems: StockItem[] = cn.items.map((i: any) => ({
+                productId: i.productId, quantity: i.quantity
+            }));
+            await bulkUpdateStock(cnItems, 'subtract', session);
+
+            await CreditNoteModel.findByIdAndDelete(cn._id).session(session || null);
+        }
+
+        // Cascade delete Payments
+        await PaymentModel.deleteMany({ invoiceId: id }).session(session || null);
+
+        await InvoiceModel.findByIdAndDelete(id).session(session || null);
+
+        return { success: true, message: "Factura eliminada correctamente" };
+    }).catch(error => {
+        console.error('Error deleting invoice:', error);
+        return { success: false, message: error.message || "Error al eliminar factura" };
+    }).then(async res => {
+        if (res.success) {
+            await syncNCFSequences();
+            revalidatePath('/invoices');
+            revalidatePath('/inventory');
+        }
+        return res;
+    });
+}
+
+export async function updateInvoicePaymentStatus(invoiceId: string, paymentId: string, removePayment: boolean = false): Promise<void> {
+    await dbConnect();
+
+    const payments = await PaymentModel.find({ invoiceId });
+
+    // Filter out the payment to be removed if applicable
+    const effectivePayments = removePayment
+        ? payments.filter(p => p._id.toString() !== paymentId)
+        : payments;
+
+    const totalPaid = effectivePayments.reduce((sum, p) => sum + p.amount, 0);
+
+    const invoice = await InvoiceModel.findById(invoiceId);
+    if (!invoice) return;
+
+    let status: InvoiceStatus = invoice.status as InvoiceStatus;
+
+    if (totalPaid === 0) {
+        status = "Pendiente";
+    } else if (totalPaid >= invoice.total) {
+        status = "Pagada";
+    } else {
+        status = "Parcial";
+    }
+
+    let updateQuery: any = {
+        paidAmount: totalPaid,
+        status: status
+    };
+
+    if (removePayment) {
+        updateQuery.$pull = { payments: paymentId };
+    } else {
+        updateQuery.$addToSet = { payments: paymentId };
+    }
+
+    await InvoiceModel.findByIdAndUpdate(invoiceId, updateQuery);
+    revalidatePath('/invoices');
+}
+
+export async function addCreditNoteToInvoice(invoiceId: string, creditNoteId: string, creditAmount: number): Promise<void> {
+    await dbConnect();
+
+    const invoice = await InvoiceModel.findById(invoiceId);
+    if (!invoice) return;
+
+    const newPaidAmount = (invoice.paidAmount || 0) + creditAmount;
+
+    let status: InvoiceStatus = invoice.status as InvoiceStatus;
+
+    if (newPaidAmount >= invoice.total - 0.01) {
+        status = "Pagada";
+        if (creditAmount >= invoice.total - 0.01) {
+            status = "Anulada";
+        }
+    } else {
+        status = "Nota de Crédito Parcial";
+    }
+
+    let updateQuery: any = {
+        $addToSet: { creditNotes: creditNoteId },
+        $inc: { paidAmount: creditAmount },
+        status: status
+    };
+
+    await InvoiceModel.findByIdAndUpdate(invoiceId, updateQuery);
+    revalidatePath('/invoices');
+}
+
+export async function fixInvoiceBalances(): Promise<void> {
+    await dbConnect();
+    try {
+        const invoices = await InvoiceModel.find({});
+
+        // Aggregate payments by invoice
+        const payments = await PaymentModel.aggregate([
+            { $group: { _id: "$invoiceId", totalPaid: { $sum: "$amount" } } }
+        ]);
+        const paymentMap = new Map(payments.map(p => [p._id.toString(), p.totalPaid]));
+
+        // Aggregate credit notes by invoice
+        const creditNotes = await CreditNoteModel.aggregate([
+            { $group: { _id: "$originalInvoiceId", totalCredit: { $sum: "$total" } } }
+        ]);
+        const creditNoteMap = new Map(creditNotes.map(c => [c._id.toString(), c.totalCredit]));
+
+        const bulkOps = [];
+
+        for (const invoice of invoices) {
+            const paymentsTotal = paymentMap.get(invoice._id.toString()) || 0;
+            const creditNotesTotal = creditNoteMap.get(invoice._id.toString()) || 0;
+            const totalPaid = paymentsTotal + creditNotesTotal;
+
+            let status = invoice.status;
+            if (totalPaid >= invoice.total - 0.01) {
+                status = "Pagada";
+                if (creditNotesTotal >= invoice.total - 0.01 && paymentsTotal === 0) {
+                    status = "Anulada";
+                }
+            } else if (totalPaid > 0) {
+                if (creditNotesTotal > 0) {
+                    status = "Nota de Crédito Parcial";
+                } else {
+                    status = "Parcial";
+                }
+            } else {
+                status = "Pendiente";
+            }
+
+            if (Math.abs((invoice.paidAmount || 0) - totalPaid) > 0.01 || invoice.status !== status) {
+                bulkOps.push({
+                    updateOne: {
+                        filter: { _id: invoice._id },
+                        update: { paidAmount: totalPaid, status: status }
+                    }
+                });
+            }
+        }
+
+        if (bulkOps.length > 0) {
+            await InvoiceModel.bulkWrite(bulkOps);
+        }
+
+        revalidatePath('/invoices');
+        revalidatePath('/dashboard');
+    } catch (error) {
+        console.error("Error fixing invoice balances:", error);
+    }
+}
+
+export async function importInvoiceFromJSON(data: any): Promise<{ success: boolean; message: string; invoiceId?: string }> {
+    await dbConnect();
+
+    try {
+        let client = await ClientModel.findOne({
+            $or: [
+                { rnc: data.clientRnc },
+                { name: data.clientName }
+            ]
+        });
+
+        if (!client) {
+            const safeRnc = data.clientRnc || `NORNC-${Date.now()}`;
+            const safeName = data.clientName.replace(/[^a-zA-Z0-9]/g, '').toLowerCase();
+            let dummyEmail = data.clientRnc ? `${data.clientRnc}@cliente.local` : `${safeName}@cliente.local`;
+
+            let existingEmail = await ClientModel.findOne({ email: dummyEmail });
+            if (existingEmail) {
+                dummyEmail = `${safeName}-${Date.now()}@cliente.local`;
+            }
+
+            client = await ClientModel.create({
+                name: data.clientName,
+                rnc: data.clientRnc || "",
+                address: data.clientAddress || "Dirección no disponible",
+                email: dummyEmail,
+                phone: "809-000-0000",
+                contactType: "Cliente",
+                type: "Persona Jurídica",
+                category: "General",
+                status: "Activo"
+            });
+        }
+
+        if (data.soldBy && data.sellerEmail) {
+            let seller = await UserModel.findOne({ email: data.sellerEmail });
+            if (!seller) {
+                try {
+                    const defaultPwd = process.env.SALES_PASSWORD || "password123";
+                    await UserModel.create({
+                        name: data.soldBy,
+                        email: data.sellerEmail,
+                        password: defaultPwd,
+                        role: "Vendedor",
+                        status: "Activo"
+                    });
+                } catch (err) {
+                    console.error("Error creating seller:", err);
+                }
+            }
+        }
+
+        const items = [];
+        for (const item of data.items) {
+            let product = await ProductModel.findOne({ name: item.productName });
+
+            if (!product) {
+                product = await ProductModel.create({
+                    name: item.productName,
+                    sku: `IMP-${Math.floor(Math.random() * 100000)}`,
+                    type: "Producto Terminado",
+                    category: "Importado",
+                    price: item.price,
+                    cost: item.price * 0.7,
+                    stock: 100,
+                    unit: "Unidad",
+                    status: "Activo"
+                });
+            }
+
+            items.push({
+                id: Math.random().toString(36).substring(2, 15),
+                productId: product._id.toString(),
+                productName: product.name,
+                quantity: item.quantity,
+                price: item.price,
+                discount: 0,
+                subtotal: item.total,
+                total: item.total
+            });
+        }
+
+        const existingInvoice = await InvoiceModel.findOne({ number: data.number });
+        if (existingInvoice) {
+            return { success: false, message: `La factura ${data.number} ya existe.` };
+        }
+
+        const newInvoice = await InvoiceModel.create({
+            number: data.number,
+            ncf: data.ncf,
+            ncfType: data.ncfType,
+            clientId: client._id,
+            clientName: client.name,
+            clientRnc: client.rnc,
+            clientAddress: client.address,
+            soldBy: data.soldBy,
+            sellerEmail: data.sellerEmail,
+            paymentTerms: data.paymentTerms,
+            date: new Date(data.date),
+            dueDate: new Date(data.dueDate),
+            status: data.status,
+            subtotal: data.subtotal,
+            discount: data.discount,
+            tax: data.tax,
+            total: data.total,
+            paidAmount: data.paidAmount,
+            items: items,
+            notes: "Importada desde JSON",
+            payments: [],
+            creditNotes: []
+        });
+
+        revalidatePath('/invoices');
+        return { success: true, message: "Factura importada correctamente", invoiceId: newInvoice._id.toString() };
+
+    } catch (error: any) {
+        console.error("Error importing invoice:", error);
+        return { success: false, message: error.message || "Error al importar factura" };
+    }
+}
+
+export async function importBulkInvoices(invoices: any[]): Promise<{ success: boolean; count: number; errors: string[] }> {
+    await dbConnect();
+    let count = 0;
+    const errors: string[] = [];
+
+    for (const invoiceData of invoices) {
+        try {
+            const result = await importInvoiceFromJSON(invoiceData);
+            if (result.success) {
+                count++;
+            } else {
+                errors.push(`Factura ${invoiceData.number}: ${result.message}`);
+            }
+        } catch (err: any) {
+            errors.push(`Factura ${invoiceData.number}: ${err.message}`);
+        }
+    }
+
+    revalidatePath('/invoices');
+    return { success: true, count, errors };
+}
+
+export async function markAllInvoicesAsPaidExcept(excludedNumbers: string[]) {
+    await dbConnect();
+    const invoices = await InvoiceModel.find({});
+    let count = 0;
+
+    for (const invoice of invoices) {
+        const parts = invoice.number.split('-');
+        const numberPart = parts[parts.length - 1];
+
+        if (excludedNumbers.includes(numberPart)) {
+            continue;
+        }
+
+        if (invoice.status === 'Pagada') continue;
+
+        const paymentDate = new Date(invoice.date);
+        paymentDate.setDate(paymentDate.getDate() + 15);
+
+        const payment = await PaymentModel.create({
+            invoiceId: invoice._id,
+            invoiceNumber: invoice.number,
+            amount: invoice.total,
+            paymentMethod: 'Transferencia',
+            paymentDate: paymentDate,
+            notes: 'Pago automático (migración)',
+            createdBy: 'Sistema'
+        });
+
+        await InvoiceModel.findByIdAndUpdate(invoice._id, {
+            status: 'Pagada',
+            paidAmount: invoice.total,
+            $push: { payments: payment._id }
+        });
+        count++;
+    }
+    revalidatePath('/invoices');
+    return { success: true, count };
+}
+
+export async function deleteInvalidInvoices() {
+    await dbConnect();
+    const invoices = await InvoiceModel.find({});
+    let count = 0;
+
+    for (const invoice of invoices) {
+        const regex = /^FAC-\d{4}-\d+$/;
+
+        if (!regex.test(invoice.number)) {
+            await PaymentModel.deleteMany({ invoiceId: invoice._id });
+            await InvoiceModel.findByIdAndDelete(invoice._id);
+            count++;
+        }
+    }
+    revalidatePath('/invoices');
+    return { success: true, count };
+}

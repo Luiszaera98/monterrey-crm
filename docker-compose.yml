@@ -1,0 +1,42 @@
+services:
+  web:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: development
+    ports:
+      - "3000:3000"
+    volumes:
+      # Mount source code for hot reload
+      - ./src:/app/src:cached
+      - ./public:/app/public:cached
+      - ./tailwind.config.ts:/app/tailwind.config.ts:cached
+      - ./next.config.js:/app/next.config.js:cached
+      - ./tsconfig.json:/app/tsconfig.json:cached
+      - ./postcss.config.js:/app/postcss.config.js:cached
+      - ./.env.local:/app/.env.local:cached
+      # Named volume for .next
+      - nextjs:/app/.next
+    environment:
+      - NODE_ENV=development
+      - WATCHPACK_POLLING=true
+      - MONGODB_URI=mongodb://mongodb:27017/monterrey_crm
+    command: npm run dev
+    depends_on:
+      - mongodb
+
+  mongodb:
+    image: mongo:7.0
+    container_name: monterrey_mongodb
+    restart: always
+    ports:
+      - "27017:27017"
+    volumes:
+      - mongodb_data:/data/db
+    environment:
+      - MONGO_INITDB_DATABASE=monterrey_crm
+
+volumes:
+  node_modules:
+  nextjs:
+  mongodb_data:
