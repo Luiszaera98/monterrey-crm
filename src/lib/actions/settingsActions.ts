@@ -193,7 +193,7 @@ export async function getNextNCF(type: string, session?: object): Promise<string
     const sequence = await Sequence.findOneAndUpdate(
         { type },
         { $inc: { currentValue: 1 } },
-        { upsert: true, new: true, session }
+        { upsert: true, new: true, session: session as any }
     );
 
     const paddedSequence = String(sequence.currentValue).padStart(8, '0');
