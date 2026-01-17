@@ -8,6 +8,8 @@ import { UsersSettings } from '@/components/settings/users-settings';
 import { UnitTypesSettings } from '@/components/settings/unit-types-settings';
 import { getChorizoTypes, getNCFSequences, getUsers, getUnitTypes } from '@/lib/actions/settingsActions';
 
+export const dynamic = 'force-dynamic';
+
 export default async function SettingsPage() {
     const chorizoTypes = await getChorizoTypes();
     const unitTypes = await getUnitTypes();

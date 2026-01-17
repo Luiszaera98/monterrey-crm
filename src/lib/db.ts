@@ -13,10 +13,16 @@ async function dbConnect(): Promise<void> {
         return;
     }
 
+    if (!process.env.MONGODB_URI) {
+        console.warn('MONGODB_URI not defined. Skipping database connection (likely build time).');
+        return;
+    }
+
     try {
         // Attempt to connect to the database
         const db = await mongoose.connect(process.env.MONGODB_URI || '', {
             dbName: 'monterrey_crm',
+            bufferCommands: false, // Disable Mongoose buffering
         });
 
         connection.isConnected = db.connections[0].readyState;
@@ -24,8 +30,8 @@ async function dbConnect(): Promise<void> {
         console.log('Database connected successfully');
     } catch (error) {
         console.error('Database connection failed:', error);
-        // Exit process with failure
-        process.exit(1);
+        // Do NOT process.exit in Next.js builds as it crashes the build
+        // process.exit(1); 
     }
 }
 
