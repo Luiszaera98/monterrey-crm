@@ -87,6 +87,7 @@ export interface IInvoiceItem {
     id: string;
     productId: string;
     productName: string;
+    description?: string;
     quantity: number;
     price: number;
     discount: number;
