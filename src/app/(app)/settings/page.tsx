@@ -1,5 +1,3 @@
-"use server";
-
 import React from 'react';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { ChorizoTypesSettings } from '@/components/settings/chorizo-types-settings';
