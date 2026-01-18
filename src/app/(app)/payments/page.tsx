@@ -1,65 +1,88 @@
 "use client";
 
 import React, { useState, useEffect } from 'react';
-import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
-import { Search, DollarSign, Download, ArrowDownLeft, ArrowUpRight, FileText, Calendar, Pencil, MoreHorizontal, Trash } from 'lucide-react';
+import { Search, DollarSign, Download, ArrowDownLeft, ArrowUpRight, FileText, Calendar, Pencil, MoreHorizontal, Trash, Eye, Paperclip } from 'lucide-react';
 import { getAllPayments, deletePayment } from '@/lib/actions/paymentActions';
-import { getExpenses } from '@/lib/actions/expenseActions';
-import { Payment, CreditNote, Expense } from '@/types';
+import { getExpenseTransactions, deleteExpenseTransaction, getExpenses } from '@/lib/actions/expenseActions';
+import { Payment, CreditNote } from '@/types';
 import { format } from 'date-fns';
 import { es } from 'date-fns/locale';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { MonthPicker } from '@/components/ui/month-picker';
 import { EditPaymentDialog } from '@/components/payments/edit-payment-dialog';
+import { EditExpensePaymentDialog } from '@/components/expenses/edit-expense-payment-dialog';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '@/components/ui/alert-dialog';
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { useToast } from "@/hooks/use-toast";
+import Image from "next/image";
+import { Input } from "@/components/ui/input";
+import { Button } from "@/components/ui/button";
 
 type Transaction =
     | (Payment & { type: 'payment' })
     | (CreditNote & { type: 'creditNote' })
-    | (Expense & { type: 'expense' });
+    | {
+        id: string;
+        type: 'expense_payment';
+        amount: number;
+        date: string;
+        paymentMethod: string;
+        expenseDescription: string;
+        expenseSupplier: string;
+        expenseCategory: string;
+        notes?: string;
+        attachments?: string[];
+    };
 
 export default function TransactionsHistoryPage() {
     const { toast } = useToast();
     const [transactions, setTransactions] = useState<Transaction[]>([]);
     const [isLoading, setIsLoading] = useState(true);
     const [searchTerm, setSearchTerm] = useState('');
+    const [totalRegisteredExpenses, setTotalRegisteredExpenses] = useState(0);
 
     const currentDate = new Date();
     const [selectedMonth, setSelectedMonth] = useState(currentDate.getMonth().toString());
     const [selectedYear, setSelectedYear] = useState(currentDate.getFullYear().toString());
 
-    // Edit Dialog State
+    // Edit Dialog States
     const [isEditDialogOpen, setIsEditDialogOpen] = useState(false);
     const [selectedPayment, setSelectedPayment] = useState<Payment | null>(null);
 
+    const [isEditExpenseDialogOpen, setIsEditExpenseDialogOpen] = useState(false);
+    const [selectedExpensePayment, setSelectedExpensePayment] = useState<any | null>(null);
+
     // Delete Confirmation State
-    const [paymentToDelete, setPaymentToDelete] = useState<Payment | null>(null);
+    const [deleteId, setDeleteId] = useState<string | null>(null);
+    const [deleteType, setDeleteType] = useState<'payment' | 'expense_payment' | null>(null);
+    const [deleteAmount, setDeleteAmount] = useState<number>(0);
+
+    // Attachment Preview State
+    const [previewUrl, setPreviewUrl] = useState<string | null>(null);
 
     useEffect(() => {
         fetchTransactions();
-    }, []);
+    }, [selectedMonth, selectedYear]);
 
     const fetchTransactions = async () => {
         setIsLoading(true);
         try {
-            const [paymentsData, expensesData] = await Promise.all([
-                getAllPayments(),
-                getExpenses()
+            const offset = new Date().getTimezoneOffset();
+            const [paymentsData, expensePaymentsData, expenses] = await Promise.all([
+                getAllPayments(selectedMonth, selectedYear),
+                getExpenseTransactions(selectedMonth, selectedYear, offset),
+                getExpenses(selectedMonth, selectedYear, offset)
             ]);
 
             const combined: Transaction[] = [
                 ...paymentsData.map(p => ({ ...p, type: 'payment' as const })),
-                // Credit Notes removed from this view
-                ...expensesData.map(e => ({
+                ...expensePaymentsData.map(e => ({
                     ...e,
-                    type: 'expense' as const,
-                    amount: e.amount // Use full amount regardless of payment status
+                    type: 'expense_payment' as const
                 }))
             ];
 
@@ -71,6 +94,7 @@ export default function TransactionsHistoryPage() {
             });
 
             setTransactions(combined);
+            setTotalRegisteredExpenses(expenses.reduce((sum, e) => sum + e.amount, 0));
         } catch (error) {
             console.error("Failed to fetch transactions", error);
         } finally {
@@ -83,63 +107,82 @@ export default function TransactionsHistoryPage() {
         setIsEditDialogOpen(true);
     };
 
-    const confirmDeletePayment = (payment: Payment) => {
-        setPaymentToDelete(payment);
+    const handleEditExpensePayment = (payment: any) => {
+        setSelectedExpensePayment(payment);
+        setIsEditExpenseDialogOpen(true);
     };
 
-    const handleDeletePayment = async () => {
-        if (!paymentToDelete) return;
+    const confirmDelete = (id: string, type: 'payment' | 'expense_payment', amount: number) => {
+        setDeleteId(id);
+        setDeleteType(type);
+        setDeleteAmount(amount);
+    };
+
+    const handleDelete = async () => {
+        if (!deleteId || !deleteType) return;
 
         try {
-            const result = await deletePayment(paymentToDelete.id);
+            let result;
+            if (deleteType === 'payment') {
+                result = await deletePayment(deleteId);
+            } else {
+                result = await deleteExpenseTransaction(deleteId);
+            }
+
             if (result.success) {
                 toast({
-                    title: "Pago eliminado",
-                    description: "El pago se ha eliminado correctamente del sistema.",
+                    title: "Transacción eliminada",
+                    description: "El registro se ha eliminado correctamente del sistema.",
                 });
                 fetchTransactions();
             } else {
                 toast({
                     title: "Error",
-                    description: result.message || "No se pudo eliminar el pago",
+                    description: result.message || "No se pudo eliminar el registro",
                     variant: "destructive",
                 });
             }
         } catch (error) {
             toast({
                 title: "Error",
-                description: "Ocurrió un error inesperado al eliminar el pago",
+                description: "Ocurrió un error inesperado al eliminar",
                 variant: "destructive",
             });
         } finally {
-            setPaymentToDelete(null);
+            setDeleteId(null);
+            setDeleteType(null);
+            setDeleteAmount(0);
         }
     };
 
+    // ... (Filter logic remains same)
     const filteredTransactions = transactions.filter(t => {
-        // Date Filter
-        const tDate = new Date(t.type === 'payment' ? t.paymentDate : t.date);
-        const matchesDate = tDate.getMonth() === parseInt(selectedMonth) &&
-            tDate.getFullYear() === parseInt(selectedYear);
-
-        if (!matchesDate) return false;
-
         const searchLower = searchTerm.toLowerCase();
         if (t.type === 'payment') {
             return t.invoiceNumber.toLowerCase().includes(searchLower) ||
                 t.paymentMethod.toLowerCase().includes(searchLower) ||
                 (t.reference && t.reference.toLowerCase().includes(searchLower));
+        } else if (t.type === 'expense_payment') {
+            return t.expenseDescription.toLowerCase().includes(searchLower) ||
+                t.expenseSupplier.toLowerCase().includes(searchLower) ||
+                t.expenseCategory.toLowerCase().includes(searchLower);
         } else if (t.type === 'creditNote') {
             return t.ncf.toLowerCase().includes(searchLower) ||
                 t.originalInvoiceNumber.toLowerCase().includes(searchLower) ||
                 t.clientName.toLowerCase().includes(searchLower);
-        } else {
-            // Expense
-            return t.description.toLowerCase().includes(searchLower) ||
-                (t.supplierName && t.supplierName.toLowerCase().includes(searchLower)) ||
-                t.category.toLowerCase().includes(searchLower);
         }
+        return false;
     });
+
+    const totalRevenue = filteredTransactions
+        .filter(t => t.type === 'payment')
+        .reduce((sum, t) => sum + (t as Payment).amount, 0);
+
+    const totalExpenses = filteredTransactions
+        .filter(t => t.type === 'expense_payment')
+        .reduce((sum, t) => sum + (t as any).amount, 0);
+
+    const netCashFlow = totalRevenue - totalExpenses;
 
     const months = [
         { value: "0", label: "Enero" },
@@ -155,20 +198,6 @@ export default function TransactionsHistoryPage() {
         { value: "10", label: "Noviembre" },
         { value: "11", label: "Diciembre" },
     ];
-
-    const years = Array.from({ length: 5 }, (_, i) => (new Date().getFullYear() - i).toString());
-
-    const totalRevenue = filteredTransactions
-        .filter(t => t.type === 'payment')
-        .reduce((sum, t) => sum + (t as Payment).amount, 0);
-
-    const totalExpenses = filteredTransactions
-        .filter(t => t.type === 'expense')
-        .reduce((sum, t) => sum + (t as Expense).amount, 0);
-
-
-
-    const netCashFlow = totalRevenue - totalExpenses;
 
     const getPaymentMethodBadge = (method: string) => {
         const colors = {
@@ -195,6 +224,7 @@ export default function TransactionsHistoryPage() {
 
     return (
         <div className="space-y-8 max-w-7xl mx-auto p-4 sm:p-6 bg-slate-50/50 min-h-screen rounded-xl">
+            {/* ... (Header and Cards remain same) ... */}
             {/* Header */}
             <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
                 <div>
@@ -247,7 +277,7 @@ export default function TransactionsHistoryPage() {
 
                 <Card className="border-slate-100 shadow-sm bg-white">
                     <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                        <CardTitle className="text-sm font-medium text-slate-600">Total Gastos</CardTitle>
+                        <CardTitle className="text-sm font-medium text-slate-600">Total Gastos (Pagados)</CardTitle>
                         <ArrowUpRight className="h-4 w-4 text-rose-500" />
                     </CardHeader>
                     <CardContent>
@@ -255,12 +285,25 @@ export default function TransactionsHistoryPage() {
                             ${totalExpenses.toLocaleString('es-DO', { minimumFractionDigits: 2 })}
                         </div>
                         <p className="text-xs text-slate-500 mt-1">
-                            {filteredTransactions.filter(t => t.type === 'expense').length} gastos pagados
+                            {filteredTransactions.filter(t => t.type === 'expense_payment').length} pagos de gastos realizados
                         </p>
                     </CardContent>
                 </Card>
 
-
+                <Card className="border-slate-100 shadow-sm bg-white">
+                    <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                        <CardTitle className="text-sm font-medium text-slate-600">Cuentas por Pagar</CardTitle>
+                        <FileText className="h-4 w-4 text-slate-400" />
+                    </CardHeader>
+                    <CardContent>
+                        <div className="text-2xl font-bold text-slate-700">
+                            ${totalRegisteredExpenses.toLocaleString('es-DO', { minimumFractionDigits: 2 })}
+                        </div>
+                        <p className="text-xs text-slate-500 mt-1">
+                            Total de gastos registrados en el mes
+                        </p>
+                    </CardContent>
+                </Card>
             </div>
 
             {/* Transactions Table */}
@@ -286,6 +329,7 @@ export default function TransactionsHistoryPage() {
                         </div>
                     </div>
                 </CardHeader>
+
                 <CardContent className="p-0">
                     <div className="rounded-none border-0">
                         <Table>
@@ -304,7 +348,10 @@ export default function TransactionsHistoryPage() {
                                 {filteredTransactions.length > 0 ? (
                                     filteredTransactions.map((t) => {
                                         let date, amount, badge, description, category;
-                                        const isEditable = t.type === 'payment';
+                                        const isEditable = t.type === 'payment' || t.type === 'expense_payment';
+
+                                        // Specific for expenses
+                                        const hasAttachments = t.type === 'expense_payment' && t.attachments && t.attachments.length > 0;
 
                                         if (t.type === 'payment') {
                                             date = t.paymentDate;
@@ -312,13 +359,18 @@ export default function TransactionsHistoryPage() {
                                             badge = <Badge variant="outline" className="bg-emerald-50 text-emerald-700 border-emerald-200">Ingreso</Badge>;
                                             description = <span className="text-slate-700">Factura {t.invoiceNumber} <span className="text-slate-500">{t.reference ? `(${t.reference})` : ''}</span></span>;
                                             category = getPaymentMethodBadge(t.paymentMethod);
-                                        } else if (t.type === 'expense') {
+                                        } else if (t.type === 'expense_payment') {
                                             date = t.date;
                                             amount = t.amount;
                                             badge = <Badge variant="outline" className="bg-rose-50 text-rose-700 border-rose-200">Gasto</Badge>;
-                                            description = <span className="text-slate-700">{t.description} <span className="text-slate-500">{t.supplierName ? ` - ${t.supplierName}` : ''}</span></span>;
-                                            category = <Badge variant="secondary" className="bg-slate-100 text-slate-600 hover:bg-slate-200">{t.category}</Badge>;
-                                        } else {
+                                            description = (
+                                                <div className="flex items-center gap-2">
+                                                    <span className="text-slate-700">{t.expenseDescription} <span className="text-slate-500">{t.expenseSupplier ? ` - ${t.expenseSupplier}` : ''}</span></span>
+                                                    {hasAttachments && <Paperclip className="h-3 w-3 text-blue-500" />}
+                                                </div>
+                                            );
+                                            category = <Badge variant="secondary" className="bg-slate-100 text-slate-600 hover:bg-slate-200">{t.expenseCategory}</Badge>;
+                                        } else if (t.type === 'creditNote') {
                                             date = t.date;
                                             amount = t.total;
                                             badge = <Badge variant="outline" className="bg-amber-50 text-amber-700 border-amber-200">Nota Crédito</Badge>;
@@ -329,7 +381,7 @@ export default function TransactionsHistoryPage() {
                                         return (
                                             <TableRow key={`${t.type}-${t.id}`} className="hover:bg-slate-50/50 border-slate-100 text-sm">
                                                 <TableCell className="text-slate-500">
-                                                    {format(new Date(date), 'dd MMM yyyy', { locale: es })}
+                                                    {format(new Date(date as string), 'dd MMM yyyy', { locale: es })}
                                                 </TableCell>
                                                 <TableCell>{badge}</TableCell>
                                                 <TableCell className="font-medium">
@@ -339,9 +391,9 @@ export default function TransactionsHistoryPage() {
                                                     {category}
                                                 </TableCell>
                                                 <TableCell className={`text-right font-bold ${t.type === 'payment' ? 'text-emerald-600' :
-                                                    t.type === 'expense' ? 'text-rose-600' : 'text-amber-600'
+                                                    (t.type === 'expense_payment' || t.type === 'creditNote') ? 'text-rose-600' : 'text-slate-600'
                                                     }`}>
-                                                    {t.type === 'payment' ? '+' : '-'}${amount.toLocaleString('es-DO', { minimumFractionDigits: 2 })}
+                                                    {t.type === 'payment' ? '+' : '-'}${Number(amount).toLocaleString('es-DO', { minimumFractionDigits: 2 })}
                                                 </TableCell>
                                                 <TableCell className="text-slate-500 max-w-xs truncate">
                                                     {t.notes || '-'}
@@ -356,12 +408,21 @@ export default function TransactionsHistoryPage() {
                                                                 </Button>
                                                             </DropdownMenuTrigger>
                                                             <DropdownMenuContent align="end">
-                                                                <DropdownMenuItem onClick={() => handleEditPayment(t as Payment)}>
-                                                                    <Pencil className="nr-2 h-4 w-4" />
+                                                                {hasAttachments && t.type === 'expense_payment' && (
+                                                                    <DropdownMenuItem onClick={() => setPreviewUrl(t.attachments?.[0] || null)}>
+                                                                        <Eye className="mr-2 h-4 w-4" />
+                                                                        <span>Ver Comprobante</span>
+                                                                    </DropdownMenuItem>
+                                                                )}
+                                                                <DropdownMenuItem onClick={() => {
+                                                                    if (t.type === 'payment') handleEditPayment(t as Payment);
+                                                                    else if (t.type === 'expense_payment') handleEditExpensePayment(t);
+                                                                }}>
+                                                                    <Pencil className="mr-2 h-4 w-4" />
                                                                     <span>Editar</span>
                                                                 </DropdownMenuItem>
                                                                 <DropdownMenuItem
-                                                                    onClick={() => confirmDeletePayment(t as Payment)}
+                                                                    onClick={() => confirmDelete(t.id, t.type as 'payment' | 'expense_payment', t.amount)}
                                                                     className="text-red-600 focus:text-red-600"
                                                                 >
                                                                     <Trash className="mr-2 h-4 w-4" />
@@ -397,22 +458,51 @@ export default function TransactionsHistoryPage() {
                 onSuccess={fetchTransactions}
             />
 
-            <AlertDialog open={!!paymentToDelete} onOpenChange={(open) => !open && setPaymentToDelete(null)}>
+            <EditExpensePaymentDialog
+                open={isEditExpenseDialogOpen}
+                onOpenChange={setIsEditExpenseDialogOpen}
+                payment={selectedExpensePayment}
+                onSuccess={fetchTransactions}
+            />
+
+            <AlertDialog open={!!deleteId} onOpenChange={(open) => !open && setDeleteId(null)}>
                 <AlertDialogContent>
                     <AlertDialogHeader>
                         <AlertDialogTitle>¿Está seguro?</AlertDialogTitle>
                         <AlertDialogDescription>
-                            Esta acción no se puede deshacer. Se eliminará el pago de ${paymentToDelete?.amount.toLocaleString('es-DO', { minimumFractionDigits: 2 })} y se actualizará el saldo de la factura {paymentToDelete?.invoiceNumber}.
+                            Esta acción no se puede deshacer. Se eliminará el pago de ${deleteAmount.toLocaleString('es-DO', { minimumFractionDigits: 2 })} y se actualizará el saldo correspondiente.
                         </AlertDialogDescription>
                     </AlertDialogHeader>
                     <AlertDialogFooter>
                         <AlertDialogCancel>Cancelar</AlertDialogCancel>
-                        <AlertDialogAction onClick={handleDeletePayment} className="bg-red-600 hover:bg-red-700">
+                        <AlertDialogAction onClick={handleDelete} className="bg-red-600 hover:bg-red-700">
                             Eliminar
                         </AlertDialogAction>
                     </AlertDialogFooter>
                 </AlertDialogContent>
             </AlertDialog>
+
+            {/* Preview Dialog */}
+            <Dialog open={!!previewUrl} onOpenChange={(open) => !open && setPreviewUrl(null)}>
+                <DialogContent className="sm:max-w-xl">
+                    <DialogHeader>
+                        <DialogTitle>Comprobante de Pago</DialogTitle>
+                    </DialogHeader>
+                    <div className="flex items-center justify-center p-4 bg-slate-50 rounded-lg">
+                        {previewUrl && (
+                            <div className="relative w-full h-[60vh]">
+                                <Image
+                                    src={previewUrl}
+                                    alt="Comprobante"
+                                    fill
+                                    className="object-contain"
+                                    unoptimized
+                                />
+                            </div>
+                        )}
+                    </div>
+                </DialogContent>
+            </Dialog>
         </div>
     );
 }

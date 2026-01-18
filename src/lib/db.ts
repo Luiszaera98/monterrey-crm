@@ -7,10 +7,12 @@ type ConnectionObject = {
 const connection: ConnectionObject = {};
 
 async function dbConnect(): Promise<void> {
-    // Check if we have a connection to the database or if it's currently connecting
-    if (connection.isConnected) {
-        console.log('Already connected to database');
-        return;
+    if (mongoose.connections.length > 0) {
+        if (mongoose.connections[0].readyState === 1) {
+            // console.log('Already connected to database');
+            return;
+        }
+        await mongoose.disconnect();
     }
 
     if (!process.env.MONGODB_URI) {
@@ -19,10 +21,15 @@ async function dbConnect(): Promise<void> {
     }
 
     try {
-        // Attempt to connect to the database
+        console.log("Attempting to connect to MongoDB...");
+        // Mask password in logs
+        const uriLog = (process.env.MONGODB_URI || '').replace(/:([^:@]+)@/, ':****@');
+        console.log(`Connection URI: ${uriLog}`);
+
         const db = await mongoose.connect(process.env.MONGODB_URI || '', {
             dbName: 'monterrey_crm',
-            bufferCommands: false, // Disable Mongoose buffering
+            bufferCommands: false,
+            serverSelectionTimeoutMS: 5000, // Fail fast for debugging
         });
 
         connection.isConnected = db.connections[0].readyState;
@@ -30,8 +37,6 @@ async function dbConnect(): Promise<void> {
         console.log('Database connected successfully');
     } catch (error) {
         console.error('Database connection failed:', error);
-        // Do NOT process.exit in Next.js builds as it crashes the build
-        // process.exit(1); 
     }
 }
 

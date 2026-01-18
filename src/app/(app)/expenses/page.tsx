@@ -118,7 +118,7 @@ export default function ExpensesPage() {
 
     const getStatusBadge = (status: string) => {
         switch (status) {
-            case 'Pagado': return <Badge className="bg-green-100 text-green-800 hover:bg-green-200 dark:bg-green-900/30 dark:text-green-400">Pagado</Badge>;
+            case 'Pagada': return <Badge className="bg-green-100 text-green-800 hover:bg-green-200 dark:bg-green-900/30 dark:text-green-400">Pagada</Badge>;
             case 'Parcial': return <Badge className="bg-blue-100 text-blue-800 hover:bg-blue-200 dark:bg-blue-900/30 dark:text-blue-400">Parcial</Badge>;
             default: return <Badge variant="secondary" className="bg-orange-100 text-orange-800 hover:bg-orange-200 dark:bg-orange-900/30 dark:text-orange-400">Pendiente</Badge>;
         }
@@ -158,7 +158,7 @@ export default function ExpensesPage() {
 
                 <TabsContent value="list" className="space-y-6">
                     <div className="flex justify-end">
-                        <CreateExpenseDialog />
+                        <CreateExpenseDialog onSuccess={fetchExpenses} />
                     </div>
 
                     <Card className="border-slate-100 shadow-sm bg-white">

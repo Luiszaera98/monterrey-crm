@@ -74,17 +74,17 @@ export default function LoginPage() {
         <div className="flex min-h-screen items-center justify-center bg-gray-100 dark:bg-gray-900 p-4">
             <div className="w-full max-w-md space-y-8 bg-white dark:bg-gray-950 p-10 rounded-2xl shadow-xl">
                 <div className="flex flex-col items-center text-center">
-                    <div className="-mb-6">
+                    <div className="mb-6">
                         <Image
                             src="/logo.png"
                             alt="Industrias Monterrey"
-                            width={240}
-                            height={90}
-                            className="w-auto h-auto max-w-[240px] object-contain"
+                            width={280}
+                            height={100}
+                            className="w-auto h-auto max-w-[280px] object-contain"
                             priority
                         />
                     </div>
-                    <h1 className="mt-0 text-3xl font-bold tracking-tight text-gray-900 dark:text-gray-50">Bienvenido</h1>
+                    <h1 className="text-2xl font-bold tracking-tight text-gray-900 dark:text-gray-50">Bienvenido</h1>
                     <p className="text-sm text-muted-foreground mt-2">
                         Ingresa a Industrias Monterrey CRM
                     </p>

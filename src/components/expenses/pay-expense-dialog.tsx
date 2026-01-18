@@ -1,5 +1,3 @@
-"use client";
-
 import { useState, useEffect } from "react";
 import { Button } from "@/components/ui/button";
 import {
@@ -21,8 +19,10 @@ import {
 } from "@/components/ui/select";
 import { useToast } from "@/hooks/use-toast";
 import { registerExpensePayment } from "@/lib/actions/expenseActions";
+import { uploadFile } from "@/lib/actions/uploadActions";
 import { Expense } from "@/types";
-import { Loader2 } from "lucide-react";
+import { Loader2, Paperclip, X } from "lucide-react";
+import Image from "next/image";
 
 interface PayExpenseDialogProps {
     expense: Expense | null;
@@ -41,6 +41,9 @@ export function PayExpenseDialog({ expense, open, onOpenChange, onSuccess }: Pay
         paymentMethod: "Efectivo",
     });
 
+    const [attachment, setAttachment] = useState<string | null>(null);
+    const [isUploading, setIsUploading] = useState(false);
+
     useEffect(() => {
         if (open && expense) {
             const pendingAmount = expense.amount - (expense.paidAmount || 0);
@@ -49,6 +52,7 @@ export function PayExpenseDialog({ expense, open, onOpenChange, onSuccess }: Pay
                 paymentDate: new Date().toISOString().split('T')[0],
                 paymentMethod: "Efectivo",
             });
+            setAttachment(null);
         }
     }, [open, expense]);
 
@@ -59,6 +63,30 @@ export function PayExpenseDialog({ expense, open, onOpenChange, onSuccess }: Pay
     const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
         const { name, value } = e.target;
         setFormData((prev) => ({ ...prev, [name]: value }));
+    };
+
+    const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+        const file = e.target.files?.[0];
+        if (!file) return;
+
+        setIsUploading(true);
+        const data = new FormData();
+        data.append('file', file);
+
+        try {
+            const result = await uploadFile(data);
+            if (result.success && result.url) {
+                setAttachment(result.url);
+                toast({ title: "Archivo subido correctamente" });
+            } else {
+                toast({ title: "Error al subir archivo", variant: "destructive" });
+            }
+        } catch (error) {
+            console.error(error);
+            toast({ title: "Error inesperado al subir", variant: "destructive" });
+        } finally {
+            setIsUploading(false);
+        }
     };
 
     const handleSubmit = async (e: React.FormEvent) => {
@@ -83,7 +111,8 @@ export function PayExpenseDialog({ expense, open, onOpenChange, onSuccess }: Pay
                 expense.id,
                 amountToPay,
                 formData.paymentMethod,
-                formData.paymentDate
+                formData.paymentDate,
+                attachment ? [attachment] : []
             );
 
             if (result.success) {
@@ -189,12 +218,58 @@ export function PayExpenseDialog({ expense, open, onOpenChange, onSuccess }: Pay
                                 </SelectContent>
                             </Select>
                         </div>
+
+                        {/* File Upload Section */}
+                        <div className="space-y-2">
+                            <Label>Comprobante (Opcional)</Label>
+                            <div className="flex items-center gap-2">
+                                <Button
+                                    type="button"
+                                    variant="outline"
+                                    size="sm"
+                                    className="w-full text-muted-foreground"
+                                    onClick={() => document.getElementById('file-upload')?.click()}
+                                    disabled={isUploading}
+                                >
+                                    {isUploading ? (
+                                        <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                                    ) : (
+                                        <Paperclip className="mr-2 h-4 w-4" />
+                                    )}
+                                    {attachment ? "Cambiar Archivo" : "Adjuntar Comprobante"}
+                                </Button>
+                                <input
+                                    id="file-upload"
+                                    type="file"
+                                    accept="image/*,.pdf"
+                                    className="hidden"
+                                    onChange={handleFileChange}
+                                />
+                            </div>
+                            {attachment && (
+                                <div className="relative mt-2 p-2 border rounded-md bg-slate-50 flex items-center justify-between">
+                                    <span className="text-xs text-blue-600 truncate max-w-[200px]">
+                                        {attachment.split('/').pop()}
+                                    </span>
+                                    <Button
+                                        type="button"
+                                        variant="ghost"
+                                        size="icon"
+                                        className="h-6 w-6 text-slate-400 hover:text-red-500"
+                                        onClick={() => setAttachment(null)}
+                                    >
+                                        <X className="h-4 w-4" />
+                                    </Button>
+                                </div>
+                            )}
+                        </div>
                     </div>
+
                     <DialogFooter>
                         <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>
                             Cancelar
                         </Button>
-                        <Button type="submit" disabled={isLoading}>
+                        <Button type="submit" disabled={isLoading || isUploading}>
                             {isLoading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
                             Registrar Pago
                         </Button>

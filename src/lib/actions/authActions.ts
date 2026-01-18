@@ -99,7 +99,7 @@ export async function loginAction(formData: FormData) {
         await dbConnect();
 
         // Auto-seed if empty (Safety mechanism for first run)
-        // await seedUsers();
+        await seedUsers();
 
         const user = await User.findOne({ email }).select("+password");
 

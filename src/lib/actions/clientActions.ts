@@ -31,6 +31,21 @@ export async function getClients(): Promise<Client[]> {
     }
 }
 
+export async function getContacts(): Promise<{ id: string; name: string; type: string }[]> {
+    await dbConnect();
+    try {
+        const contacts = await ClientModel.find({}, 'name contactType').sort({ name: 1 }).lean();
+        return contacts.map((c: any) => ({
+            id: c._id.toString(),
+            name: c.name,
+            type: c.contactType || 'Cliente'
+        }));
+    } catch (error) {
+        console.error("Error fetching contacts:", error);
+        return [];
+    }
+}
+
 export async function createClient(data: Omit<Client, 'id' | 'createdAt' | 'updatedAt'>): Promise<{ success: boolean; client?: Client; message?: string }> {
     await dbConnect();
     await dbConnect();

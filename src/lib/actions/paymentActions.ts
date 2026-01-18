@@ -118,10 +118,20 @@ export async function getPaymentsByInvoice(invoiceId: string): Promise<Payment[]
     }
 }
 
-export async function getAllPayments(): Promise<Payment[]> {
+export async function getAllPayments(month?: string, year?: string, timezoneOffset?: number): Promise<Payment[]> {
     await dbConnect();
     try {
-        const payments = await PaymentModel.find({}).sort({ paymentDate: -1 }).lean();
+        let query: any = {};
+        if (month && year) {
+            const offsetMs = (timezoneOffset || 0) * 60 * 1000;
+            const startUTC = Date.UTC(parseInt(year), parseInt(month), 1);
+            const startDate = new Date(startUTC + offsetMs);
+            const endUTC = Date.UTC(parseInt(year), parseInt(month) + 1, 0, 23, 59, 59, 999);
+            const endDate = new Date(endUTC + offsetMs);
+            query.paymentDate = { $gte: startDate, $lte: endDate };
+        }
+
+        const payments = await PaymentModel.find(query).sort({ paymentDate: -1 }).lean();
         return payments.map(mapPayment);
     } catch (error) {
         console.error("Error fetching all payments:", error);

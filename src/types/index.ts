@@ -16,7 +16,7 @@ export interface Client {
     updatedAt: Date | string;
 }
 
-export type ProductType = 'Chorizo' | 'Materia Prima';
+export type ProductType = 'Chorizo' | 'Materia Prima' | 'Maquinaria y Equipos';
 
 export interface Product {
     id: string;
@@ -143,6 +143,7 @@ export interface Expense {
     paidAmount?: number;
     lastPaymentDate?: string;
     notes?: string;
+    attachments?: string[];
     createdAt: Date | string;
     updatedAt: Date | string;
 }

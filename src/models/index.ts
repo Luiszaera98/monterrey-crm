@@ -267,6 +267,7 @@ export interface IExpense extends Document {
     paidAmount: number;
     lastPaymentDate?: Date;
     notes?: string;
+    attachments?: string[];
     createdAt: Date;
     updatedAt: Date;
 }
@@ -284,6 +285,7 @@ const ExpenseSchema = new Schema<IExpense>({
     paidAmount: { type: Number, default: 0 },
     lastPaymentDate: { type: Date },
     notes: { type: String },
+    attachments: [{ type: String }],
 }, { timestamps: true });
 
 // Indexes for performance
@@ -291,6 +293,31 @@ ExpenseSchema.index({ date: -1 });
 ExpenseSchema.index({ category: 1 });
 
 export const Expense: Model<IExpense> = mongoose.models.Expense || mongoose.model<IExpense>('Expense', ExpenseSchema);
+
+// ==================== EXPENSE TRANSACTION ====================
+export interface IExpenseTransaction extends Document {
+    expenseId: string;
+    amount: number;
+    paymentMethod: string;
+    date: Date;
+    notes?: string;
+    attachments?: string[];
+    createdAt: Date;
+}
+
+const ExpenseTransactionSchema = new Schema<IExpenseTransaction>({
+    expenseId: { type: String, required: true },
+    amount: { type: Number, required: true },
+    paymentMethod: { type: String, required: true },
+    date: { type: Date, required: true },
+    notes: { type: String },
+    attachments: [{ type: String }],
+}, { timestamps: true });
+
+ExpenseTransactionSchema.index({ expenseId: 1 });
+ExpenseTransactionSchema.index({ date: -1 });
+
+export const ExpenseTransaction: Model<IExpenseTransaction> = mongoose.models.ExpenseTransaction || mongoose.model<IExpenseTransaction>('ExpenseTransaction', ExpenseTransactionSchema);
 
 // ==================== RECURRING EXPENSE ====================
 export interface IRecurringExpense extends Document {

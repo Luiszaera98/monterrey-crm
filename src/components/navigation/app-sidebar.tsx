@@ -141,7 +141,7 @@ export function AppSidebar({ currentUserRole, userName, userEmail }: AppSidebarP
             <SidebarHeader className="p-0 border-b border-sidebar-border">
                 <Link href="/dashboard" className="flex items-center h-20 px-4 transition-colors hover:bg-sidebar-accent/50">
                     <div className="flex items-center justify-center w-10 h-10 rounded-lg bg-white p-1 shadow-sm group-data-[collapsible=icon]:w-10 group-data-[collapsible=icon]:h-10">
-                        <Image src="/logo.png" alt="IM" width={40} height={40} className="w-full h-full object-contain" />
+                        <Image src="/logo.png" alt="Monterrey Logo" width={32} height={32} className="w-full h-full object-contain" />
                     </div>
                     <div className="ml-3 flex flex-col group-data-[collapsible=icon]:hidden">
                         <span className="text-sm font-bold text-sidebar-foreground leading-tight">

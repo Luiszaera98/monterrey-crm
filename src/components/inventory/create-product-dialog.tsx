@@ -81,6 +81,10 @@ export function CreateProductDialog({ onProductCreated }: CreateProductDialogPro
             toast({ title: "Error", description: "El costo es requerido para Materia Prima.", variant: "destructive" });
             return;
         }
+        if (type === 'Maquinaria y Equipos' && !cost) {
+            toast({ title: "Error", description: "El costo es requerido para Maquinaria y Equipos.", variant: "destructive" });
+            return;
+        }
 
         startTransition(async () => {
             const result = await createProduct({
@@ -145,6 +149,7 @@ export function CreateProductDialog({ onProductCreated }: CreateProductDialogPro
                             <SelectContent>
                                 <SelectItem value="Chorizo">Chorizo (Producto Terminado)</SelectItem>
                                 <SelectItem value="Materia Prima">Materia Prima</SelectItem>
+                                <SelectItem value="Maquinaria y Equipos">Maquinaria y Equipos</SelectItem>
                             </SelectContent>
                         </Select>
                     </div>

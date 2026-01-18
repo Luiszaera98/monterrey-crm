@@ -1,9 +1,10 @@
 "use server";
 
 import dbConnect from '@/lib/db';
-import { Expense as ExpenseModel, RecurringExpense as RecurringExpenseModel } from '@/models';
+import { Expense as ExpenseModel, RecurringExpense as RecurringExpenseModel, ExpenseTransaction as ExpenseTransactionModel } from '@/models';
 import { Expense, RecurringExpense } from '@/types';
 import { revalidatePath } from 'next/cache';
+import mongoose from 'mongoose';
 import { addWeeks, addMonths, addYears, isBefore, setDate } from 'date-fns';
 
 // Helper to convert MongoDB document to Expense type
@@ -22,6 +23,7 @@ function mapExpense(doc: any): Expense {
         paidAmount: doc.paidAmount || 0,
         lastPaymentDate: doc.lastPaymentDate ? doc.lastPaymentDate.toISOString() : undefined,
         notes: doc.notes,
+        attachments: doc.attachments || [],
         createdAt: doc.createdAt.toISOString(),
         updatedAt: doc.updatedAt.toISOString(),
     };
@@ -115,6 +117,55 @@ export async function checkAndGenerateRecurringExpenses(): Promise<void> {
     }
 }
 
+// Helper to map transaction (Optional, if we want strict typing)
+function mapExpenseTransaction(doc: any) {
+    return {
+        id: doc._id.toString(),
+        expenseId: doc.expenseId,
+        amount: doc.amount,
+        paymentMethod: doc.paymentMethod,
+        date: doc.date instanceof Date ? doc.date.toISOString() : doc.date,
+        notes: doc.notes,
+        createdAt: doc.createdAt.toISOString()
+    };
+}
+
+export async function getExpenseTransactions(month?: string, year?: string, timezoneOffset?: number): Promise<any[]> {
+    await dbConnect();
+    try {
+        let query: any = {};
+        if (month && year) {
+            const offsetMs = (timezoneOffset || 0) * 60 * 1000;
+            const startUTC = Date.UTC(parseInt(year), parseInt(month), 1);
+            const startDate = new Date(startUTC + offsetMs);
+            const endUTC = Date.UTC(parseInt(year), parseInt(month) + 1, 0, 23, 59, 59, 999);
+            const endDate = new Date(endUTC + offsetMs);
+            query.date = { $gte: startDate, $lte: endDate };
+        }
+
+        const transactions = await ExpenseTransactionModel.find(query).sort({ date: -1 }).lean();
+
+        // Enrich with expense details (description, supplier) if possible
+        // Ideally we would populate, but for now we'll do it purely
+        const enriched = await Promise.all(transactions.map(async (t: any) => {
+            const expense = await ExpenseModel.findById(t.expenseId).select('description supplier category invoiceNumber').lean();
+            return {
+                ...mapExpenseTransaction(t),
+                attachments: t.attachments || [],
+                expenseDescription: expense?.description || 'Gasto Eliminado',
+                expenseSupplier: expense?.supplier || '',
+                expenseCategory: expense?.category || '',
+                expenseInvoiceNumber: expense?.invoiceNumber || ''
+            };
+        }));
+
+        return enriched;
+    } catch (error) {
+        console.error("Error fetching expense transactions:", error);
+        return [];
+    }
+}
+
 export async function getExpenses(month?: string, year?: string, timezoneOffset?: number): Promise<Expense[]> {
     await dbConnect();
     // Check for recurring expenses generation on load
@@ -160,8 +211,22 @@ export async function createExpense(data: Omit<Expense, 'id' | 'createdAt' | 'up
             reference: data.reference,
             status: data.status,
             paidAmount: paidAmount,
-            notes: data.notes
+            paidAmount: paidAmount,
+            notes: data.notes,
+            attachments: data.attachments || []
         });
+
+        // If created as 'Pagada', create a transaction record to reflect the payment
+        if (data.status === 'Pagada') {
+            await ExpenseTransactionModel.create({
+                expenseId: newExpense._id.toString(),
+                amount: data.amount,
+                paymentMethod: data.paymentMethod || 'Efectivo',
+                date: new Date(data.date),
+                notes: data.notes,
+                attachments: data.attachments || []
+            });
+        }
 
         revalidatePath('/expenses');
         return { success: true, expense: mapExpense(newExpense) };
@@ -188,6 +253,22 @@ export async function updateExpense(id: string, data: Partial<Expense>): Promise
             notes: data.notes
         };
 
+        // Logic to maintain consistency between status and paidAmount
+        if (data.status === 'Pendiente') {
+            updateData.paidAmount = 0;
+        } else if (data.status === 'Pagada') {
+            // If changing to Pagada, we need the full amount. 
+            // If amount is in updateData, use it. Otherwise, we need to fetch the document.
+            if (updateData.amount) {
+                updateData.paidAmount = updateData.amount;
+            } else {
+                const currentDoc = await ExpenseModel.findById(id);
+                if (currentDoc) {
+                    updateData.paidAmount = currentDoc.amount;
+                }
+            }
+        }
+
         Object.keys(updateData).forEach(key => updateData[key] === undefined && delete updateData[key]);
 
         const updatedExpense = await ExpenseModel.findByIdAndUpdate(id, updateData, { new: true });
@@ -204,13 +285,22 @@ export async function updateExpense(id: string, data: Partial<Expense>): Promise
     }
 }
 
-export async function registerExpensePayment(id: string, amount: number, paymentMethod: string, date: string): Promise<{ success: boolean; message?: string }> {
+export async function registerExpensePayment(id: string, amount: number, paymentMethod: string, date: string, attachments?: string[]): Promise<{ success: boolean; message?: string }> {
     await dbConnect();
     try {
         const expense = await ExpenseModel.findById(id);
         if (!expense) {
             return { success: false, message: "Gasto no encontrado" };
         }
+
+        // Create transaction record
+        await ExpenseTransactionModel.create({
+            expenseId: id,
+            amount: amount,
+            paymentMethod: paymentMethod,
+            date: new Date(date),
+            attachments: attachments || []
+        });
 
         const newPaidAmount = (expense.paidAmount || 0) + amount;
         let newStatus = expense.status;
@@ -243,11 +333,112 @@ export async function deleteExpenseAction(id: string): Promise<{ success: boolea
         if (!result) {
             return { success: false, message: "Gasto no encontrado" };
         }
+
+        // Cascade delete transactions
+        await ExpenseTransactionModel.deleteMany({ expenseId: id });
+
         revalidatePath('/expenses');
         return { success: true };
     } catch (error: any) {
         console.error("Error deleting expense:", error);
         return { success: false, message: error.message || "Error al eliminar gasto" };
+    }
+}
+
+export async function updateExpenseTransaction(id: string, data: { amount: number; paymentMethod: string; date: string; notes?: string }): Promise<{ success: boolean; message?: string }> {
+    await dbConnect();
+    try {
+        const transaction = await ExpenseTransactionModel.findById(id);
+        if (!transaction) return { success: false, message: "Transacción no encontrada" };
+
+        const expense = await ExpenseModel.findById(transaction.expenseId);
+        if (!expense) return { success: false, message: "Gasto asociado no encontrado" };
+
+        // Calculate new paid amount: (Current Paid - Old Transaction Amount) + New Transaction Amount
+        // Ensure we don't go below zero if data is inconsistent
+        let newPaidAmount = (expense.paidAmount || 0) - transaction.amount + data.amount;
+        if (newPaidAmount < 0) newPaidAmount = 0;
+
+        // Cap at total amount (optional, but good practice to allow overpayment handling or strict cap)
+        // For flexibility, we allow it but status logic handles it. 
+        // If strict strict: if (newPaidAmount > expense.amount) newPaidAmount = expense.amount;
+
+        // Determine new status
+        let newStatus = expense.status;
+        if (newPaidAmount >= expense.amount - 0.01) {
+            newStatus = 'Pagada';
+        } else if (newPaidAmount > 0) {
+            newStatus = 'Parcial';
+        } else {
+            newStatus = 'Pendiente';
+        }
+
+        // Update Expense
+        await ExpenseModel.findByIdAndUpdate(expense._id, {
+            paidAmount: newPaidAmount,
+            status: newStatus,
+            // If this was the last payment, maybe update lastPaymentDate? 
+            // It's complex to find the "real" last payment if we edit an old one. 
+            // We'll leave lastPaymentDate as is or update it if the edited date is newer.
+        });
+
+        // Update Transaction
+        await ExpenseTransactionModel.findByIdAndUpdate(id, {
+            amount: data.amount,
+            paymentMethod: data.paymentMethod,
+            date: new Date(data.date),
+            notes: data.notes
+        });
+
+        revalidatePath('/expenses');
+        return { success: true };
+
+    } catch (error: any) {
+        console.error("Error updating expense transaction:", error);
+        return { success: false, message: error.message || "Error al actualizar transacción" };
+    }
+}
+
+export async function deleteExpenseTransaction(id: string): Promise<{ success: boolean; message?: string }> {
+    await dbConnect();
+    try {
+        const transaction = await ExpenseTransactionModel.findById(id);
+        if (!transaction) return { success: false, message: "Transacción no encontrada" };
+
+        const expense = await ExpenseModel.findById(transaction.expenseId);
+        if (!expense) {
+            // If expense doesn't exist, just delete the orphan transaction
+            await ExpenseTransactionModel.findByIdAndDelete(id);
+            return { success: true };
+        }
+
+        // Revert paid amount
+        let newPaidAmount = (expense.paidAmount || 0) - transaction.amount;
+        if (newPaidAmount < 0) newPaidAmount = 0;
+
+        // Recalculate status
+        let newStatus = expense.status;
+        if (newPaidAmount >= expense.amount - 0.01) {
+            newStatus = 'Pagada';
+        } else if (newPaidAmount > 0) {
+            newStatus = 'Parcial';
+        } else {
+            newStatus = 'Pendiente';
+        }
+
+        await ExpenseModel.findByIdAndUpdate(expense._id, {
+            paidAmount: newPaidAmount,
+            status: newStatus
+        });
+
+        await ExpenseTransactionModel.findByIdAndDelete(id);
+
+        revalidatePath('/expenses');
+        return { success: true };
+
+    } catch (error: any) {
+        console.error("Error deleting expense transaction:", error);
+        return { success: false, message: error.message || "Error al eliminar transacción" };
     }
 }
 

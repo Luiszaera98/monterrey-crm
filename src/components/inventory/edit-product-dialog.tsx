@@ -144,6 +144,7 @@ export function EditProductDialog({ product, open, onOpenChange, onSuccess }: Ed
                                 <SelectContent>
                                     <SelectItem value="Chorizo">Chorizo</SelectItem>
                                     <SelectItem value="Materia Prima">Materia Prima</SelectItem>
+                                    <SelectItem value="Maquinaria y Equipos">Maquinaria y Equipos</SelectItem>
                                 </SelectContent>
                             </Select>
                         </div>
