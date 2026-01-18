@@ -27,8 +27,8 @@ export async function uploadFile(formData: FormData): Promise<{ success: boolean
         // Write file
         await writeFile(filePath, buffer);
 
-        // Return URL relative to public
-        const url = `/uploads/expenses/${uniqueName}`;
+        // Return URL served via API route to ensure it works in Docker Standalone
+        const url = `/api/uploads/expenses/${uniqueName}`;
         return { success: true, url };
     } catch (error: any) {
         console.error("Error uploading file:", error);
