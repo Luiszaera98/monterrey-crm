@@ -211,7 +211,6 @@ export async function createExpense(data: Omit<Expense, 'id' | 'createdAt' | 'up
             reference: data.reference,
             status: data.status,
             paidAmount: paidAmount,
-            paidAmount: paidAmount,
             notes: data.notes,
             attachments: data.attachments || []
         });
