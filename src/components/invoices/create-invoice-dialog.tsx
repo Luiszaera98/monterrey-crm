@@ -56,12 +56,15 @@ export function CreateInvoiceDialog({ open, onOpenChange, onSuccess }: CreateInv
     }, [open]);
 
     const loadData = async () => {
-        const [clientsData, productsData] = await Promise.all([
-            getClients(),
-            getProducts()
+        // Fetch with large limit to populate dropdowns
+        const [clientsResult, productsResult] = await Promise.all([
+            getClients(1, 1000),
+            getProducts(1, 1000)
         ]);
-        setClients(clientsData);
-        setProducts(productsData);
+
+        // Handle paginated response structure
+        setClients(clientsResult.clients || []);
+        setProducts(productsResult.products || []);
     };
 
     const addItem = () => {
