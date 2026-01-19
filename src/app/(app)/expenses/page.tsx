@@ -46,6 +46,12 @@ export default function ExpensesPage() {
     const [isLoading, setIsLoading] = useState(true);
     const [searchTerm, setSearchTerm] = useState('');
     const [categoryFilter, setCategoryFilter] = useState<ExpenseCategory | 'Todos'>('Todos');
+    const [statusFilter, setStatusFilter] = useState<string>('Todos');
+
+    // Pagination State
+    const [page, setPage] = useState(1);
+    const [totalPages, setTotalPages] = useState(1);
+    const [totalExpenses, setTotalExpenses] = useState(0);
 
     // Dialog states
     const [payExpense, setPayExpense] = useState<Expense | null>(null);
@@ -54,38 +60,63 @@ export default function ExpensesPage() {
 
     const { toast } = useToast();
 
-    const months = [
-        { value: "0", label: "Enero" },
-        { value: "1", label: "Febrero" },
-        { value: "2", label: "Marzo" },
-        { value: "3", label: "Abril" },
-        { value: "4", label: "Mayo" },
-        { value: "5", label: "Junio" },
-        { value: "6", label: "Julio" },
-        { value: "7", label: "Agosto" },
-        { value: "8", label: "Septiembre" },
-        { value: "9", label: "Octubre" },
-        { value: "10", label: "Noviembre" },
-        { value: "11", label: "Diciembre" },
-    ];
-
-    const years = Array.from({ length: 5 }, (_, i) => (new Date().getFullYear() - i).toString());
-
-    useEffect(() => {
-        fetchExpenses();
-    }, [selectedMonth, selectedYear]);
-
+    // Fetch expenses with all filters
     const fetchExpenses = async () => {
         setIsLoading(true);
         try {
             const offset = new Date().getTimezoneOffset();
-            const data = await getExpenses(selectedMonth, selectedYear, offset);
-            setExpenses(data);
+            const result = await getExpenses(
+                selectedMonth,
+                selectedYear,
+                offset,
+                page,
+                25,
+                statusFilter,
+                categoryFilter,
+                searchTerm
+            );
+            setExpenses(result.expenses);
+            setTotalPages(result.totalPages);
+            setTotalExpenses(result.total);
         } catch (error) {
             console.error("Failed to fetch expenses", error);
         } finally {
             setIsLoading(false);
         }
+    };
+
+    // Effect for fetching with debounce for search
+    useEffect(() => {
+        const timer = setTimeout(() => {
+            fetchExpenses();
+        }, 300);
+        return () => clearTimeout(timer);
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [selectedMonth, selectedYear, page, statusFilter, categoryFilter, searchTerm]);
+
+    const handleSearchChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+        setSearchTerm(e.target.value);
+        setPage(1);
+    };
+
+    const handleCategoryChange = (value: string) => {
+        setCategoryFilter(value as ExpenseCategory | 'Todos');
+        setPage(1);
+    };
+
+    const handleStatusChange = (value: string) => {
+        setStatusFilter(value);
+        setPage(1);
+    };
+
+    const handleMonthChange = (month: string) => {
+        setSelectedMonth(month);
+        setPage(1);
+    };
+
+    const handleYearChange = (year: string) => {
+        setSelectedYear(year);
+        setPage(1);
     };
 
     const handleDelete = async () => {
@@ -109,13 +140,6 @@ export default function ExpensesPage() {
         setDeleteExpense(null);
     };
 
-    const filteredExpenses = expenses.filter(expense =>
-        (expense.description.toLowerCase().includes(searchTerm.toLowerCase()) ||
-            (expense.supplierName && expense.supplierName.toLowerCase().includes(searchTerm.toLowerCase())) ||
-            (expense.invoiceNumber && expense.invoiceNumber.toLowerCase().includes(searchTerm.toLowerCase()))) &&
-        (categoryFilter === 'Todos' || expense.category === categoryFilter)
-    );
-
     const getStatusBadge = (status: string) => {
         switch (status) {
             case 'Pagada': return <Badge className="bg-green-100 text-green-800 hover:bg-green-200 dark:bg-green-900/30 dark:text-green-400">Pagada</Badge>;
@@ -124,30 +148,27 @@ export default function ExpensesPage() {
         }
     };
 
-    if (isLoading) {
-        return (
-            <div className="flex items-center justify-center h-[50vh]">
-                <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary"></div>
-            </div>
-        );
-    }
-
     return (
         <div className="space-y-8 max-w-7xl mx-auto p-4 sm:p-6 bg-slate-50/50 min-h-screen rounded-xl">
             <Tabs defaultValue="list" className="w-full">
                 <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 mb-6">
                     <div>
                         <h1 className="text-3xl font-bold tracking-tight text-slate-800">Gastos</h1>
-                        <p className="text-slate-500 mt-1">Gestione los gastos y salidas de efectivo.</p>
+                        <p className="text-slate-500 mt-1">Gestione los gastos y salidas de efectivo ({totalExpenses} registros).</p>
                     </div>
                     <div className="flex items-center gap-4">
-                        {/* Month/Year Filter */}
-                        <MonthPicker
-                            currentMonth={selectedMonth}
-                            currentYear={selectedYear}
-                            onMonthChange={setSelectedMonth}
-                            onYearChange={setSelectedYear}
-                        />
+                        {/* Month/Year Filter: Disable if status is Pendiente/Parcial to clear confusion, or just let users know? 
+                            The requirement is just to ignore the date internaly.
+                            Maybe show a tooltip or just keep it simple.
+                        */}
+                        <div className={statusFilter === 'Pendiente' || statusFilter === 'Parcial' ? 'opacity-50 pointer-events-none' : ''}>
+                            <MonthPicker
+                                currentMonth={selectedMonth}
+                                currentYear={selectedYear}
+                                onMonthChange={handleMonthChange}
+                                onYearChange={handleYearChange}
+                            />
+                        </div>
 
                         <TabsList className="bg-slate-100">
                             <TabsTrigger value="list" className="data-[state=active]:bg-white data-[state=active]:text-slate-900">Listado</TabsTrigger>
@@ -163,32 +184,45 @@ export default function ExpensesPage() {
 
                     <Card className="border-slate-100 shadow-sm bg-white">
                         <CardHeader className="pb-4">
-                            <div className="flex flex-col sm:flex-row items-center gap-4 justify-between">
-                                <div className="relative w-full sm:max-w-md">
+                            <div className="flex flex-col xl:flex-row items-center gap-4 justify-between">
+                                <div className="relative w-full xl:max-w-md">
                                     <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
                                     <Input
                                         placeholder="Buscar por descripción, proveedor o factura..."
                                         value={searchTerm}
-                                        onChange={(e) => setSearchTerm(e.target.value)}
+                                        onChange={handleSearchChange}
                                         className="pl-10 border-slate-200 focus:border-slate-400"
                                     />
                                 </div>
-                                <Select value={categoryFilter} onValueChange={(value) => setCategoryFilter(value as ExpenseCategory | 'Todos')}>
-                                    <SelectTrigger className="w-full sm:w-[200px] border-slate-200">
-                                        <Wallet className="mr-2 h-4 w-4 text-muted-foreground" />
-                                        <SelectValue placeholder="Categoría" />
-                                    </SelectTrigger>
-                                    <SelectContent>
-                                        <SelectItem value="Todos">Todas</SelectItem>
-                                        <SelectItem value="Materia Prima">Materia Prima</SelectItem>
-                                        <SelectItem value="Servicios">Servicios</SelectItem>
-                                        <SelectItem value="Nómina">Nómina</SelectItem>
-                                        <SelectItem value="Mantenimiento">Mantenimiento</SelectItem>
-                                        <SelectItem value="Impuestos">Impuestos</SelectItem>
-                                        <SelectItem value="Préstamos">Préstamos</SelectItem>
-                                        <SelectItem value="Otros">Otros</SelectItem>
-                                    </SelectContent>
-                                </Select>
+                                <div className="flex flex-col sm:flex-row gap-2 w-full xl:w-auto">
+                                    <Select value={statusFilter} onValueChange={handleStatusChange}>
+                                        <SelectTrigger className="w-full sm:w-[150px] border-slate-200">
+                                            <SelectValue placeholder="Estado" />
+                                        </SelectTrigger>
+                                        <SelectContent>
+                                            <SelectItem value="Todos">Todos</SelectItem>
+                                            <SelectItem value="Pendiente">Pendiente</SelectItem>
+                                            <SelectItem value="Pagada">Pagada</SelectItem>
+                                            <SelectItem value="Parcial">Parcial</SelectItem>
+                                        </SelectContent>
+                                    </Select>
+                                    <Select value={categoryFilter} onValueChange={handleCategoryChange}>
+                                        <SelectTrigger className="w-full sm:w-[200px] border-slate-200">
+                                            <Wallet className="mr-2 h-4 w-4 text-muted-foreground" />
+                                            <SelectValue placeholder="Categoría" />
+                                        </SelectTrigger>
+                                        <SelectContent>
+                                            <SelectItem value="Todos">Todas</SelectItem>
+                                            <SelectItem value="Materia Prima">Materia Prima</SelectItem>
+                                            <SelectItem value="Servicios">Servicios</SelectItem>
+                                            <SelectItem value="Nómina">Nómina</SelectItem>
+                                            <SelectItem value="Mantenimiento">Mantenimiento</SelectItem>
+                                            <SelectItem value="Impuestos">Impuestos</SelectItem>
+                                            <SelectItem value="Préstamos">Préstamos</SelectItem>
+                                            <SelectItem value="Otros">Otros</SelectItem>
+                                        </SelectContent>
+                                    </Select>
+                                </div>
                             </div>
                         </CardHeader>
                         <CardContent>
@@ -209,8 +243,16 @@ export default function ExpensesPage() {
                                         </TableRow>
                                     </TableHeader>
                                     <TableBody>
-                                        {filteredExpenses.length > 0 ? (
-                                            filteredExpenses.map((expense) => {
+                                        {isLoading ? (
+                                            <TableRow>
+                                                <TableCell colSpan={10} className="h-24 text-center">
+                                                    <div className="flex justify-center items-center">
+                                                        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div>
+                                                    </div>
+                                                </TableCell>
+                                            </TableRow>
+                                        ) : expenses.length > 0 ? (
+                                            expenses.map((expense) => {
                                                 const pendingAmount = expense.amount - (expense.paidAmount || 0);
                                                 return (
                                                     <TableRow key={expense.id} className="hover:bg-slate-50/50 border-slate-100">
@@ -286,6 +328,31 @@ export default function ExpensesPage() {
                                         )}
                                     </TableBody>
                                 </Table>
+                            </div>
+
+                            {/* Pagination Controls */}
+                            <div className="flex items-center justify-end space-x-2 py-4">
+                                <div className="flex-1 text-sm text-muted-foreground">
+                                    Página {page} de {totalPages}
+                                </div>
+                                <div className="space-x-2">
+                                    <Button
+                                        variant="outline"
+                                        size="sm"
+                                        onClick={() => setPage(p => Math.max(1, p - 1))}
+                                        disabled={page === 1 || isLoading}
+                                    >
+                                        Anterior
+                                    </Button>
+                                    <Button
+                                        variant="outline"
+                                        size="sm"
+                                        onClick={() => setPage(p => Math.min(totalPages, p + 1))}
+                                        disabled={page === totalPages || isLoading}
+                                    >
+                                        Siguiente
+                                    </Button>
+                                </div>
                             </div>
                         </CardContent>
                     </Card>

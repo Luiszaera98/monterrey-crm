@@ -6,7 +6,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Search, DollarSign, Download, ArrowDownLeft, ArrowUpRight, FileText, Calendar, Pencil, MoreHorizontal, Trash, Eye, Paperclip } from 'lucide-react';
 import { getAllPayments, deletePayment } from '@/lib/actions/paymentActions';
-import { getExpenseTransactions, deleteExpenseTransaction, getExpenses } from '@/lib/actions/expenseActions';
+import { getExpenseTransactions, deleteExpenseTransaction, getMonthlyExpenseTotal } from '@/lib/actions/expenseActions';
 import { Payment, CreditNote } from '@/types';
 import { format } from 'date-fns';
 import { es } from 'date-fns/locale';
@@ -49,6 +49,10 @@ export default function TransactionsHistoryPage() {
     const [selectedMonth, setSelectedMonth] = useState(currentDate.getMonth().toString());
     const [selectedYear, setSelectedYear] = useState(currentDate.getFullYear().toString());
 
+    // Pagination State
+    const [page, setPage] = useState(1);
+    const ITEMS_PER_PAGE = 25;
+
     // Edit Dialog States
     const [isEditDialogOpen, setIsEditDialogOpen] = useState(false);
     const [selectedPayment, setSelectedPayment] = useState<Payment | null>(null);
@@ -65,6 +69,7 @@ export default function TransactionsHistoryPage() {
     const [previewUrl, setPreviewUrl] = useState<string | null>(null);
 
     useEffect(() => {
+        setPage(1);
         fetchTransactions();
     }, [selectedMonth, selectedYear]);
 
@@ -72,10 +77,11 @@ export default function TransactionsHistoryPage() {
         setIsLoading(true);
         try {
             const offset = new Date().getTimezoneOffset();
-            const [paymentsData, expensePaymentsData, expenses] = await Promise.all([
+            // Use getMonthlyExpenseTotal instead of getExpenses (which is now paginated)
+            const [paymentsData, expensePaymentsData, totalExpensesAmount] = await Promise.all([
                 getAllPayments(selectedMonth, selectedYear),
                 getExpenseTransactions(selectedMonth, selectedYear, offset),
-                getExpenses(selectedMonth, selectedYear, offset)
+                getMonthlyExpenseTotal(selectedMonth, selectedYear, offset)
             ]);
 
             const combined: Transaction[] = [
@@ -94,7 +100,7 @@ export default function TransactionsHistoryPage() {
             });
 
             setTransactions(combined);
-            setTotalRegisteredExpenses(expenses.reduce((sum, e) => sum + e.amount, 0));
+            setTotalRegisteredExpenses(totalExpensesAmount);
         } catch (error) {
             console.error("Failed to fetch transactions", error);
         } finally {
@@ -155,7 +161,7 @@ export default function TransactionsHistoryPage() {
         }
     };
 
-    // ... (Filter logic remains same)
+    // Filter logic
     const filteredTransactions = transactions.filter(t => {
         const searchLower = searchTerm.toLowerCase();
         if (t.type === 'payment') {
@@ -173,6 +179,13 @@ export default function TransactionsHistoryPage() {
         }
         return false;
     });
+
+    // Pagination Logic
+    const totalPages = Math.ceil(filteredTransactions.length / ITEMS_PER_PAGE);
+    const paginatedTransactions = filteredTransactions.slice(
+        (page - 1) * ITEMS_PER_PAGE,
+        page * ITEMS_PER_PAGE
+    );
 
     const totalRevenue = filteredTransactions
         .filter(t => t.type === 'payment')
@@ -224,7 +237,6 @@ export default function TransactionsHistoryPage() {
 
     return (
         <div className="space-y-8 max-w-7xl mx-auto p-4 sm:p-6 bg-slate-50/50 min-h-screen rounded-xl">
-            {/* ... (Header and Cards remain same) ... */}
             {/* Header */}
             <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
                 <div>
@@ -319,7 +331,10 @@ export default function TransactionsHistoryPage() {
                                     placeholder="Buscar..."
                                     className="pl-8 border-slate-200 focus:border-slate-400"
                                     value={searchTerm}
-                                    onChange={(e) => setSearchTerm(e.target.value)}
+                                    onChange={(e) => {
+                                        setSearchTerm(e.target.value);
+                                        setPage(1);
+                                    }}
                                 />
                             </div>
                             <Button variant="outline" size="sm" className="border-slate-200 text-slate-600 hover:bg-slate-50">
@@ -345,8 +360,8 @@ export default function TransactionsHistoryPage() {
                                 </TableRow>
                             </TableHeader>
                             <TableBody>
-                                {filteredTransactions.length > 0 ? (
-                                    filteredTransactions.map((t) => {
+                                {paginatedTransactions.length > 0 ? (
+                                    paginatedTransactions.map((t) => {
                                         let date, amount, badge, description, category;
                                         const isEditable = t.type === 'payment' || t.type === 'expense_payment';
 
@@ -448,6 +463,33 @@ export default function TransactionsHistoryPage() {
                             </TableBody>
                         </Table>
                     </div>
+
+                    {/* Pagination Controls */}
+                    {totalPages > 1 && (
+                        <div className="flex items-center justify-end space-x-2 py-4 px-4 border-t border-slate-100">
+                            <div className="flex-1 text-sm text-muted-foreground">
+                                Página {page} de {totalPages}
+                            </div>
+                            <div className="space-x-2">
+                                <Button
+                                    variant="outline"
+                                    size="sm"
+                                    onClick={() => setPage(p => Math.max(1, p - 1))}
+                                    disabled={page === 1 || isLoading}
+                                >
+                                    Anterior
+                                </Button>
+                                <Button
+                                    variant="outline"
+                                    size="sm"
+                                    onClick={() => setPage(p => Math.min(totalPages, p + 1))}
+                                    disabled={page === totalPages || isLoading}
+                                >
+                                    Siguiente
+                                </Button>
+                            </div>
+                        </div>
+                    )}
                 </CardContent>
             </Card>
 

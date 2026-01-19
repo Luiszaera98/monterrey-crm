@@ -4,13 +4,17 @@ import { ChorizoTypesSettings } from '@/components/settings/chorizo-types-settin
 import { NCFSettings } from '@/components/settings/ncf-settings';
 import { UsersSettings } from '@/components/settings/users-settings';
 import { UnitTypesSettings } from '@/components/settings/unit-types-settings';
-import { getChorizoTypes, getNCFSequences, getUsers, getUnitTypes } from '@/lib/actions/settingsActions';
+import { ProductTypesSettings } from '@/components/settings/product-types-settings';
+import { ExpenseCategoriesSettings } from '@/components/settings/expense-categories-settings';
+import { getChorizoTypes, getNCFSequences, getUsers, getUnitTypes, getProductTypes, getExpenseCategories } from '@/lib/actions/settingsActions';
 
 export const dynamic = 'force-dynamic';
 
 export default async function SettingsPage() {
     const chorizoTypes = await getChorizoTypes();
     const unitTypes = await getUnitTypes();
+    const productTypes = await getProductTypes();
+    const expenseCategories = await getExpenseCategories();
     const ncfSequences = await getNCFSequences();
     const users = await getUsers();
 
@@ -22,15 +26,21 @@ export default async function SettingsPage() {
             </div>
 
             <Tabs defaultValue="inventory" className="w-full">
-                <TabsList className="grid w-full grid-cols-3 mb-8">
+                <TabsList className="grid w-full grid-cols-4 mb-8">
                     <TabsTrigger value="inventory">Inventario</TabsTrigger>
+                    <TabsTrigger value="expenses">Gastos</TabsTrigger>
                     <TabsTrigger value="fiscal">Fiscal (NCF)</TabsTrigger>
                     <TabsTrigger value="users">Usuarios</TabsTrigger>
                 </TabsList>
 
                 <TabsContent value="inventory" className="space-y-4">
+                    <ProductTypesSettings initialTypes={productTypes} />
                     <ChorizoTypesSettings initialTypes={chorizoTypes} />
                     <UnitTypesSettings initialTypes={unitTypes} />
+                </TabsContent>
+
+                <TabsContent value="expenses" className="space-y-4">
+                    <ExpenseCategoriesSettings initialCategories={expenseCategories} />
                 </TabsContent>
 
                 <TabsContent value="fiscal" className="space-y-4">

@@ -166,14 +166,82 @@ export async function getExpenseTransactions(month?: string, year?: string, time
     }
 }
 
-export async function getExpenses(month?: string, year?: string, timezoneOffset?: number): Promise<Expense[]> {
+export async function getMonthlyExpenseTotal(
+    month: string,
+    year: string,
+    timezoneOffset: number = 0
+): Promise<number> {
+    await dbConnect();
+    try {
+        const offsetMs = (timezoneOffset || 0) * 60 * 1000;
+        const startUTC = Date.UTC(parseInt(year), parseInt(month), 1);
+        const startDate = new Date(startUTC + offsetMs);
+        const endUTC = Date.UTC(parseInt(year), parseInt(month) + 1, 0, 23, 59, 59, 999);
+        const endDate = new Date(endUTC + offsetMs);
+
+        const result = await ExpenseModel.aggregate([
+            {
+                $match: {
+                    date: { $gte: startDate, $lte: endDate }
+                }
+            },
+            {
+                $group: {
+                    _id: null,
+                    total: { $sum: "$amount" }
+                }
+            }
+        ]);
+
+        return result.length > 0 ? result[0].total : 0;
+    } catch (error) {
+        console.error("Error fetching monthly expense total:", error);
+        return 0;
+    }
+}
+
+export async function getExpenses(
+    month?: string,
+    year?: string,
+    timezoneOffset: number = 0,
+    page: number = 1,
+    limit: number = 25,
+    statusFilter: string = 'Todos',
+    category: string = 'Todos',
+    search: string = ''
+): Promise<{ expenses: Expense[]; total: number; totalPages: number }> {
     await dbConnect();
     // Check for recurring expenses generation on load
     await checkAndGenerateRecurringExpenses();
 
     try {
         let query: any = {};
-        if (month && year) {
+
+        // Status Filter Logic
+        if (statusFilter !== 'Todos') {
+            query.status = statusFilter;
+        }
+
+        // Category Filter Logic
+        if (category !== 'Todos') {
+            query.category = category;
+        }
+
+        // Search Logic
+        if (search) {
+            const searchRegex = new RegExp(search, 'i');
+            query.$or = [
+                { description: searchRegex },
+                { supplier: searchRegex },
+                { invoiceNumber: searchRegex }
+            ];
+        }
+
+        // Date Logic
+        // If filtering by Pendiente or Parcial, ignore the date range (showing global debt)
+        const ignoreDate = (statusFilter === 'Pendiente' || statusFilter === 'Parcial');
+
+        if (month && year && !ignoreDate) {
             const offsetMs = (timezoneOffset || 0) * 60 * 1000;
 
             // Start of month in UTC
@@ -187,11 +255,25 @@ export async function getExpenses(month?: string, year?: string, timezoneOffset?
             query.date = { $gte: startDate, $lte: endDate };
         }
 
-        const expenses = await ExpenseModel.find(query).sort({ date: -1 }).lean();
-        return expenses.map(mapExpense);
+        const skip = (page - 1) * limit;
+
+        const [expenses, total] = await Promise.all([
+            ExpenseModel.find(query)
+                .sort({ date: -1 })
+                .skip(skip)
+                .limit(limit)
+                .lean(),
+            ExpenseModel.countDocuments(query)
+        ]);
+
+        return {
+            expenses: expenses.map(mapExpense),
+            total,
+            totalPages: Math.ceil(total / limit)
+        };
     } catch (error) {
         console.error("Error fetching expenses:", error);
-        return [];
+        return { expenses: [], total: 0, totalPages: 0 };
     }
 }
 

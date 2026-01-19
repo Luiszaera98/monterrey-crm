@@ -40,10 +40,20 @@ export default function InvoicesPage() {
     const [documents, setDocuments] = useState<FiscalDocument[]>([]);
     const [isLoading, setIsLoading] = useState(true);
     const [searchTerm, setSearchTerm] = useState('');
-    const [statusFilter, setStatusFilter] = useState<string>('all');
+    const [statusFilters, setStatusFilters] = useState<string[]>([]);
     const [selectedInvoices, setSelectedInvoices] = useState<string[]>([]);
     const [isSelectionMode, setIsSelectionMode] = useState(false);
     const [isCreateDialogOpen, setIsCreateDialogOpen] = useState(false);
+
+    // ... (rest of states)
+
+    const toggleStatusFilter = (status: string) => {
+        setStatusFilters(prev =>
+            prev.includes(status)
+                ? prev.filter(s => s !== status)
+                : [...prev, status]
+        );
+    };
     const [viewInvoice, setViewInvoice] = useState<Invoice | null>(null);
     const [editInvoice, setEditInvoice] = useState<Invoice | null>(null);
     const [deleteInvoice, setDeleteInvoice] = useState<Invoice | null>(null);
@@ -134,9 +144,31 @@ export default function InvoicesPage() {
             doc.clientName.toLowerCase().includes(searchTerm.toLowerCase()) ||
             (doc.ncf && doc.ncf.toLowerCase().includes(searchTerm.toLowerCase()));
 
-        const matchesStatus = statusFilter === 'all' || doc.status === statusFilter;
+        // Calculate real status for filtering (handle Vencida dynamically for better UX)
+        let docStatus = doc.status;
+        if (docStatus === 'Pendiente' && new Date(doc.dueDate) < new Date() && doc.documentType === 'invoice') {
+            docStatus = 'Vencida';
+        }
 
-        return matchesSearch && matchesStatus;
+        const matchesStatus = statusFilters.length === 0 || statusFilters.includes(docStatus) || (statusFilters.includes('Pendiente') && docStatus === 'Vencida');
+
+        // Date Logic override:
+        // By default, we only show docs from the selected Month/Year.
+        // BUT, if the user explicitly filters for 'Pendiente', 'Parcial', or 'Vencida', we want to show those GLOBALLY (even past ones).
+
+        const docDate = new Date(doc.date);
+        const isInSelectedMonth = docDate.getMonth() === parseInt(selectedMonth) && docDate.getFullYear() === parseInt(selectedYear);
+
+        // Check if current active filters imply looking for debt
+        const isDebtFilterActive = statusFilters.some(s => ['Pendiente', 'Parcial', 'Vencida'].includes(s));
+
+        // If a debt filter is active AND this doc matches that debt status, show it regardless of date.
+        // Otherwise, enforce month selection.
+        const matchesDate = isDebtFilterActive && ['Pendiente', 'Parcial', 'Vencida'].includes(docStatus)
+            ? true // Show global debt if filtered
+            : isInSelectedMonth; // Otherwise restrict to month
+
+        return matchesSearch && matchesStatus && matchesDate;
     });
 
     const totalPages = Math.ceil(filteredDocuments.length / itemsPerPage);
@@ -306,20 +338,53 @@ export default function InvoicesPage() {
                             />
                         </div>
                         <div className="flex items-center gap-2">
-                            <Filter className="h-4 w-4 text-muted-foreground" />
-                            <Select value={statusFilter} onValueChange={setStatusFilter}>
-                                <SelectTrigger className="w-[180px]">
-                                    <SelectValue placeholder="Filtrar por estado" />
-                                </SelectTrigger>
-                                <SelectContent>
-                                    <SelectItem value="all">Todos los estados</SelectItem>
-                                    <SelectItem value="Pendiente">Pendiente</SelectItem>
-                                    <SelectItem value="Pagada">Pagada</SelectItem>
-                                    <SelectItem value="Parcial">Pago Parcial</SelectItem>
-                                    <SelectItem value="Vencida">Vencida</SelectItem>
-                                    <SelectItem value="Anulada">Anulada</SelectItem>
-                                </SelectContent>
-                            </Select>
+                            <DropdownMenu>
+                                <DropdownMenuTrigger asChild>
+                                    <Button variant="outline" className="border-dashed">
+                                        <Filter className="mr-2 h-4 w-4" />
+                                        Estado
+                                        {statusFilters.length > 0 && (
+                                            <>
+                                                <div className="hidden space-x-1 lg:flex ml-2">
+                                                    {statusFilters.length > 2 ? (
+                                                        <Badge variant="secondary" className="rounded-sm px-1 font-normal">
+                                                            {statusFilters.length} seleccionados
+                                                        </Badge>
+                                                    ) : (
+                                                        statusFilters.map(option => (
+                                                            <Badge variant="secondary" key={option} className="rounded-sm px-1 font-normal">
+                                                                {option}
+                                                            </Badge>
+                                                        ))
+                                                    )}
+                                                </div>
+                                            </>
+                                        )}
+                                    </Button>
+                                </DropdownMenuTrigger>
+                                <DropdownMenuContent align="end" className="w-[200px]">
+                                    <DropdownMenuLabel>Filtrar por estado</DropdownMenuLabel>
+                                    <DropdownMenuSeparator />
+                                    {['Pendiente', 'Pagada', 'Parcial', 'Vencida', 'Anulada'].map((status) => (
+                                        <DropdownMenuItem key={status} onSelect={(e) => e.preventDefault()}>
+                                            <div className="flex items-center space-x-2" onClick={() => toggleStatusFilter(status)}>
+                                                <div className={`h-4 w-4 rounded border border-primary flex items-center justify-center ${statusFilters.includes(status) ? 'bg-primary text-primary-foreground' : 'opacity-50'}`}>
+                                                    {statusFilters.includes(status) && <CheckSquare className="h-3 w-3" />}
+                                                </div>
+                                                <span>{status}</span>
+                                            </div>
+                                        </DropdownMenuItem>
+                                    ))}
+                                    {statusFilters.length > 0 && (
+                                        <>
+                                            <DropdownMenuSeparator />
+                                            <DropdownMenuItem onSelect={() => setStatusFilters([])} className="justify-center text-center">
+                                                Limpiar filtros
+                                            </DropdownMenuItem>
+                                        </>
+                                    )}
+                                </DropdownMenuContent>
+                            </DropdownMenu>
                         </div>
                     </div>
                 </CardHeader>

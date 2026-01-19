@@ -26,7 +26,7 @@ export async function getDashboardAnalytics(month?: string, year?: string, timez
     for (const i of monthsToFetch) {
         // Calculate target month (going back 'i' months)
         // Adjust year/month math handles negative months automatically
-        const targetDate = new Date(Date.UTC(baseYear, baseMonth - i, 1));
+        const targetDate = new Date(Date.UTC(baseYear, baseMonth - i, 1) + offsetMs);
         const y = targetDate.getUTCFullYear();
         const m = targetDate.getUTCMonth();
 
@@ -64,7 +64,7 @@ export async function getDashboardAnalytics(month?: string, year?: string, timez
     }
 
     // Fetch same month last year
-    const lastYearDate = new Date(Date.UTC(baseYear - 1, baseMonth, 1));
+    const lastYearDate = new Date(Date.UTC(baseYear - 1, baseMonth, 1) + offsetMs);
     const lyY = lastYearDate.getUTCFullYear();
     const lyM = lastYearDate.getUTCMonth();
 

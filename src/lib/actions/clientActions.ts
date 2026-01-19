@@ -20,14 +20,46 @@ function mapClient(doc: any): Client {
     };
 }
 
-export async function getClients(): Promise<Client[]> {
+export async function getClients(
+    page: number = 1,
+    limit: number = 20,
+    search: string = '',
+    typeFilter: string = 'Todos'
+): Promise<{ clients: Client[]; total: number; totalPages: number }> {
     await dbConnect();
     try {
-        const clients = await ClientModel.find({}).sort({ createdAt: -1 }).lean();
-        return clients.map(mapClient);
+        const query: any = {};
+        if (search) {
+            const searchRegex = new RegExp(search, 'i');
+            query.$or = [
+                { name: searchRegex },
+                { rnc: searchRegex },
+                { email: searchRegex }
+            ];
+        }
+
+        if (typeFilter !== 'Todos') {
+            query.contactType = typeFilter;
+        }
+
+        const skip = (page - 1) * limit;
+        const [clients, total] = await Promise.all([
+            ClientModel.find(query)
+                .sort({ createdAt: -1 })
+                .skip(skip)
+                .limit(limit)
+                .lean(),
+            ClientModel.countDocuments(query)
+        ]);
+
+        return {
+            clients: clients.map(mapClient),
+            total,
+            totalPages: Math.ceil(total / limit)
+        };
     } catch (error) {
         console.error("Error fetching clients:", error);
-        return [];
+        return { clients: [], total: 0, totalPages: 0 };
     }
 }
 

@@ -25,6 +25,7 @@ import { useToast } from "@/hooks/use-toast";
 import { createExpense } from "@/lib/actions/expenseActions";
 import { getContacts } from "@/lib/actions/clientActions";
 import { uploadFile } from "@/lib/actions/uploadActions";
+import { getExpenseCategories } from "@/lib/actions/settingsActions";
 import { ExpenseCategory } from "@/types";
 import { PlusCircle, Loader2, Upload, X, FileText } from "lucide-react";
 import Image from "next/image";
@@ -39,6 +40,7 @@ export function CreateExpenseDialog({ onSuccess }: CreateExpenseDialogProps) {
     const { toast } = useToast();
 
     const [contacts, setContacts] = useState<{ id: string; name: string; type: string }[]>([]);
+    const [categories, setCategories] = useState<string[]>([]);
 
     // File Upload State
     const [attachment, setAttachment] = useState<string | null>(null);
@@ -59,6 +61,7 @@ export function CreateExpenseDialog({ onSuccess }: CreateExpenseDialogProps) {
     useEffect(() => {
         if (open) {
             loadContacts();
+            getExpenseCategories().then(setCategories);
         }
     }, [open]);
 
@@ -246,13 +249,9 @@ export function CreateExpenseDialog({ onSuccess }: CreateExpenseDialogProps) {
                                     <SelectValue placeholder="Seleccione..." />
                                 </SelectTrigger>
                                 <SelectContent>
-                                    <SelectItem value="Materia Prima">Materia Prima</SelectItem>
-                                    <SelectItem value="Servicios">Servicios</SelectItem>
-                                    <SelectItem value="Nómina">Nómina</SelectItem>
-                                    <SelectItem value="Mantenimiento">Mantenimiento</SelectItem>
-                                    <SelectItem value="Impuestos">Impuestos</SelectItem>
-                                    <SelectItem value="Préstamos">Préstamos</SelectItem>
-                                    <SelectItem value="Otros">Otros</SelectItem>
+                                    {categories.map((cat) => (
+                                        <SelectItem key={cat} value={cat}>{cat}</SelectItem>
+                                    ))}
                                 </SelectContent>
                             </Select>
                         </div>

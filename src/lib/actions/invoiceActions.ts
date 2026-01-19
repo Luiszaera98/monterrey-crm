@@ -61,7 +61,12 @@ export async function getInvoices(month?: string, year?: string, timezoneOffset?
             // Adjust to user's local end of month
             const endDate = new Date(endUTC + offsetMs);
 
-            query.date = { $gte: startDate, $lte: endDate };
+            query = {
+                $or: [
+                    { date: { $gte: startDate, $lte: endDate } }, // Current month activity
+                    { status: { $in: ['Pendiente', 'Parcial', 'Nota de Crédito Parcial', 'Vencida'] } } // All outstanding debt (Global)
+                ]
+            };
         }
 
         const invoices = await InvoiceModel.find(query).select('-items').sort({ createdAt: -1 }).lean();

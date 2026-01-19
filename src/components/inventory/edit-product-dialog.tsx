@@ -9,7 +9,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { updateProduct } from '@/lib/actions/inventoryActions';
 import { useToast } from '@/hooks/use-toast';
 import { Product, ProductType } from '@/types';
-import { getChorizoTypes, getUnitTypes } from '@/lib/actions/settingsActions';
+import { getChorizoTypes, getUnitTypes, getProductTypes } from '@/lib/actions/settingsActions';
 
 interface EditProductDialogProps {
     product: Product | null;
@@ -33,10 +33,12 @@ export function EditProductDialog({ product, open, onOpenChange, onSuccess }: Ed
     const [type, setType] = useState<ProductType>('Materia Prima');
     const [chorizoTypes, setChorizoTypes] = useState<string[]>([]);
     const [unitTypes, setUnitTypes] = useState<string[]>([]);
+    const [productTypes, setProductTypes] = useState<string[]>([]);
 
     useEffect(() => {
         if (open) {
             getUnitTypes().then(setUnitTypes);
+            getProductTypes().then(setProductTypes);
         }
 
         if (open && product) {
@@ -142,9 +144,9 @@ export function EditProductDialog({ product, open, onOpenChange, onSuccess }: Ed
                                     <SelectValue />
                                 </SelectTrigger>
                                 <SelectContent>
-                                    <SelectItem value="Chorizo">Chorizo</SelectItem>
-                                    <SelectItem value="Materia Prima">Materia Prima</SelectItem>
-                                    <SelectItem value="Maquinaria y Equipos">Maquinaria y Equipos</SelectItem>
+                                    {productTypes.map((pt) => (
+                                        <SelectItem key={pt} value={pt}>{pt}</SelectItem>
+                                    ))}
                                 </SelectContent>
                             </Select>
                         </div>

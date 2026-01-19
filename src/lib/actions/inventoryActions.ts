@@ -53,14 +53,53 @@ async function generateSKU(type: ProductType): Promise<string> {
     return `${prefix}-${String(sequence).padStart(3, '0')}`;
 }
 
-export async function getProducts(): Promise<Product[]> {
+export async function getProducts(
+    page: number = 1,
+    limit: number = 20,
+    search: string = '',
+    typeFilter: string = 'Todos'
+): Promise<{ products: Product[]; total: number; totalPages: number }> {
     await dbConnect();
     try {
-        const products = await ProductModel.find({}).sort({ name: 1 }).lean();
-        return products.map(mapProduct);
+        const query: any = {};
+
+        // Search Filter
+        if (search) {
+            const searchRegex = new RegExp(search, 'i');
+            query.$or = [
+                { name: searchRegex },
+                { sku: searchRegex }
+            ];
+        }
+
+        // Type Filter
+        if (typeFilter !== 'Todos') {
+            if (typeFilter === 'Producto Terminado') {
+                query.category = 'Chorizo'; // Legacy mapping or consistent with DB
+            } else {
+                query.category = typeFilter;
+            }
+        }
+
+        const skip = (page - 1) * limit;
+
+        const [products, total] = await Promise.all([
+            ProductModel.find(query)
+                .sort({ name: 1 })
+                .skip(skip)
+                .limit(limit)
+                .lean(),
+            ProductModel.countDocuments(query)
+        ]);
+
+        return {
+            products: products.map(mapProduct),
+            total,
+            totalPages: Math.ceil(total / limit)
+        };
     } catch (error) {
         console.error("Error fetching products:", error);
-        return [];
+        return { products: [], total: 0, totalPages: 0 };
     }
 }
 

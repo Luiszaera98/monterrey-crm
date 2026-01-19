@@ -40,15 +40,22 @@ export default function ClientsPage() {
     const { toast } = useToast();
     const [isPending, startTransition] = useTransition();
 
+    // Pagination State
+    const [page, setPage] = useState(1);
+    const [totalPages, setTotalPages] = useState(1);
+    const [totalClients, setTotalClients] = useState(0);
+
     const fetchClientsData = async () => {
         setIsLoading(true);
         try {
-            const fetchedClients = await getClients();
-            setClients(fetchedClients.map(c => ({
+            const result = await getClients(page, 20, searchTerm, typeFilter);
+            setClients(result.clients.map(c => ({
                 ...c,
                 createdAt: new Date(c.createdAt),
                 updatedAt: new Date(c.updatedAt),
             })));
+            setTotalPages(result.totalPages);
+            setTotalClients(result.total);
         } catch (error) {
             console.error("Failed to fetch clients", error);
             toast({ title: "Error", description: "No se pudieron cargar los contactos.", variant: "destructive" });
@@ -58,18 +65,22 @@ export default function ClientsPage() {
     };
 
     useEffect(() => {
-        fetchClientsData();
+        const timer = setTimeout(() => {
+            fetchClientsData();
+        }, 300);
+        return () => clearTimeout(timer);
         // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, []);
+    }, [page, searchTerm, typeFilter]);
 
-    const filteredClients = useMemo(() => {
-        return clients.filter(client =>
-            (client.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-                (client.rncCedula && client.rncCedula.toLowerCase().includes(searchTerm.toLowerCase())) ||
-                (client.email && client.email.toLowerCase().includes(searchTerm.toLowerCase()))) &&
-            (typeFilter === 'Todos' || client.contactType === typeFilter)
-        );
-    }, [clients, searchTerm, typeFilter]);
+    const handleSearchChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+        setSearchTerm(e.target.value);
+        setPage(1);
+    };
+
+    const handleTypeChange = (value: string) => {
+        setTypeFilter(value as ContactType | 'Todos');
+        setPage(1);
+    };
 
     const handleDeleteConfirmation = () => {
         if (!clientToDelete) return;
@@ -101,21 +112,12 @@ export default function ClientsPage() {
         }
     };
 
-    if (isLoading) {
-        return (
-            <div className="flex flex-col justify-center items-center min-h-[60vh] space-y-4">
-                <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary"></div>
-                <p className="text-lg text-muted-foreground animate-pulse">Cargando contactos...</p>
-            </div>
-        );
-    }
-
     return (
         <div className="space-y-8 max-w-7xl mx-auto">
             <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
                 <div>
                     <h1 className="text-4xl font-bold tracking-tight text-foreground">Contactos</h1>
-                    <p className="text-muted-foreground mt-1">Gestione sus clientes, proveedores y empleados.</p>
+                    <p className="text-muted-foreground mt-1">Gestione sus clientes, proveedores y empleados ({totalClients} registros).</p>
                 </div>
                 <CreateClientDialog onClientCreated={fetchClientsData} />
             </div>
@@ -129,11 +131,11 @@ export default function ClientsPage() {
                                 type="search"
                                 placeholder="Buscar por nombre, RNC o email..."
                                 value={searchTerm}
-                                onChange={(e) => setSearchTerm(e.target.value)}
+                                onChange={handleSearchChange}
                                 className="pl-10 w-full bg-background/50 border-muted focus:border-primary transition-colors"
                             />
                         </div>
-                        <Select value={typeFilter} onValueChange={(value) => setTypeFilter(value as ContactType | 'Todos')}>
+                        <Select value={typeFilter} onValueChange={handleTypeChange}>
                             <SelectTrigger className="w-full sm:w-[200px] bg-background/50 border-muted">
                                 <Filter className="mr-2 h-4 w-4 text-muted-foreground" />
                                 <SelectValue placeholder="Filtrar por tipo" />
@@ -160,8 +162,16 @@ export default function ClientsPage() {
                                 </TableRow>
                             </TableHeader>
                             <TableBody>
-                                {filteredClients.length > 0 ? (
-                                    filteredClients.map((client) => (
+                                {isLoading ? (
+                                    <TableRow>
+                                        <TableCell colSpan={5} className="h-24 text-center">
+                                            <div className="flex justify-center items-center">
+                                                <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div>
+                                            </div>
+                                        </TableCell>
+                                    </TableRow>
+                                ) : clients.length > 0 ? (
+                                    clients.map((client) => (
                                         <TableRow key={client.id} className="hover:bg-muted/30 transition-colors">
                                             <TableCell className="font-medium text-foreground">
                                                 <div className="flex flex-col">
@@ -191,12 +201,6 @@ export default function ClientsPage() {
                                                     </DropdownMenuTrigger>
                                                     <DropdownMenuContent align="end" className="w-48">
                                                         <DropdownMenuLabel>Acciones</DropdownMenuLabel>
-                                                        {/* View Details - For now, we can use Edit dialog or implement a View dialog. Let's use Edit for simplicity or disable View */}
-                                                        {/* <DropdownMenuItem asChild>
-                                                            <Link href={`/clients/${client.id}/view`} className="cursor-pointer">
-                                                                <Eye className="mr-2 h-4 w-4" /> Ver Detalles
-                                                            </Link>
-                                                        </DropdownMenuItem> */}
                                                         <DropdownMenuItem onClick={() => setClientToEdit(client)} className="cursor-pointer">
                                                             <Edit className="mr-2 h-4 w-4" /> Editar
                                                         </DropdownMenuItem>
@@ -215,7 +219,7 @@ export default function ClientsPage() {
                                             <div className="flex flex-col items-center justify-center text-muted-foreground">
                                                 <UsersRound className="h-10 w-10 mb-2 opacity-20" />
                                                 <p>No se encontraron contactos.</p>
-                                                <Button variant="link" onClick={() => setSearchTerm('')} className="mt-2">
+                                                <Button variant="link" onClick={() => { setSearchTerm(''); setTypeFilter('Todos'); setPage(1); }} className="mt-2">
                                                     Limpiar filtros
                                                 </Button>
                                             </div>
@@ -224,6 +228,31 @@ export default function ClientsPage() {
                                 )}
                             </TableBody>
                         </Table>
+                    </div>
+
+                    {/* Pagination Controls */}
+                    <div className="flex items-center justify-end space-x-2 py-4">
+                        <div className="flex-1 text-sm text-muted-foreground">
+                            Página {page} de {totalPages}
+                        </div>
+                        <div className="space-x-2">
+                            <Button
+                                variant="outline"
+                                size="sm"
+                                onClick={() => setPage(p => Math.max(1, p - 1))}
+                                disabled={page === 1 || isLoading}
+                            >
+                                Anterior
+                            </Button>
+                            <Button
+                                variant="outline"
+                                size="sm"
+                                onClick={() => setPage(p => Math.min(totalPages, p + 1))}
+                                disabled={page === totalPages || isLoading}
+                            >
+                                Siguiente
+                            </Button>
+                        </div>
                     </div>
                 </CardContent>
             </Card>

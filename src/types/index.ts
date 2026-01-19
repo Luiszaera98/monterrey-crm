@@ -16,7 +16,9 @@ export interface Client {
     updatedAt: Date | string;
 }
 
-export type ProductType = 'Chorizo' | 'Materia Prima' | 'Maquinaria y Equipos';
+export type ProductType = string;
+
+export const DEFAULT_PRODUCT_TYPES = ['Chorizo', 'Materia Prima', 'Maquinaria y Equipos'];
 
 export interface Product {
     id: string;
@@ -126,7 +128,9 @@ export interface InvoiceItem {
     total: number; // Subtotal - Descuento
 }
 
-export type ExpenseCategory = 'Servicios' | 'Nómina' | 'Materia Prima' | 'Mantenimiento' | 'Impuestos' | 'Préstamos' | 'Otros';
+export type ExpenseCategory = string;
+
+export const DEFAULT_EXPENSE_CATEGORIES = ['Servicios', 'Nómina', 'Materia Prima', 'Mantenimiento', 'Impuestos', 'Préstamos', 'Otros'];
 
 export interface Expense {
     id: string;

@@ -8,7 +8,7 @@ import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { PlusCircle } from 'lucide-react';
 import { createProduct } from '@/lib/actions/inventoryActions';
-import { getChorizoTypes, getUnitTypes } from '@/lib/actions/settingsActions';
+import { getChorizoTypes, getUnitTypes, getProductTypes } from '@/lib/actions/settingsActions';
 import { useToast } from '@/hooks/use-toast';
 import { ProductType } from '@/types';
 
@@ -35,11 +35,13 @@ export function CreateProductDialog({ onProductCreated }: CreateProductDialogPro
     // Dynamic Data
     const [chorizoTypes, setChorizoTypes] = useState<string[]>([]);
     const [unitTypes, setUnitTypes] = useState<string[]>([]);
+    const [productTypes, setProductTypes] = useState<string[]>([]);
 
     // Fetch types when dialog opens
     React.useEffect(() => {
         if (open) {
             getUnitTypes().then(setUnitTypes);
+            getProductTypes().then(setProductTypes);
             if (type === 'Chorizo') {
                 getChorizoTypes().then(setChorizoTypes);
             }
@@ -77,25 +79,26 @@ export function CreateProductDialog({ onProductCreated }: CreateProductDialogPro
             toast({ title: "Error", description: "El precio de venta es requerido para Chorizos.", variant: "destructive" });
             return;
         }
-        if (type === 'Materia Prima' && !cost) {
-            toast({ title: "Error", description: "El costo es requerido para Materia Prima.", variant: "destructive" });
-            return;
-        }
-        if (type === 'Maquinaria y Equipos' && !cost) {
-            toast({ title: "Error", description: "El costo es requerido para Maquinaria y Equipos.", variant: "destructive" });
-            return;
+        if (type !== 'Chorizo' && !cost) {
+            // Generic validation for cost on non-Chorizo items
+            // But wait, the previous code had specific checks.
+            // Let's perform a generic check if we want, or keep it strict.
+            // User wants flexibility. Let's require cost for anything that is NOT a Chorizo (finished product often has cost = 0 if calculated from recipe, but here we input it manual).
+            // Actually, let's stick to the previous logic but slightly more generic.
+            if (!cost) {
+                toast({ title: "Error", description: "El costo es requerido.", variant: "destructive" });
+                return;
+            }
         }
 
         startTransition(async () => {
             const result = await createProduct({
                 name: finalName,
                 type,
-                // SKU is auto-generated
-                // Category is auto-set to Type
                 price: parseFloat(price) || 0,
                 cost: parseFloat(cost) || 0,
-                stock: parseFloat(stock), // Changed to parseFloat
-                minStock: minStock ? parseFloat(minStock) : 0, // Changed to parseFloat
+                stock: parseFloat(stock),
+                minStock: minStock ? parseFloat(minStock) : 0,
                 unit,
                 description,
             });
@@ -147,9 +150,9 @@ export function CreateProductDialog({ onProductCreated }: CreateProductDialogPro
                                 <SelectValue placeholder="Seleccione tipo" />
                             </SelectTrigger>
                             <SelectContent>
-                                <SelectItem value="Chorizo">Chorizo (Producto Terminado)</SelectItem>
-                                <SelectItem value="Materia Prima">Materia Prima</SelectItem>
-                                <SelectItem value="Maquinaria y Equipos">Maquinaria y Equipos</SelectItem>
+                                {productTypes.map((pt) => (
+                                    <SelectItem key={pt} value={pt}>{pt}</SelectItem>
+                                ))}
                             </SelectContent>
                         </Select>
                     </div>

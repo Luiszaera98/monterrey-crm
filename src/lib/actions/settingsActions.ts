@@ -149,7 +149,125 @@ export async function removeUnitType(type: string): Promise<{ success: boolean; 
     }
 }
 
-// ==================== SEQUENCES (NCF) ====================
+// ==================== PRODUCT TYPES & EXPENSE CATEGORIES ====================
+
+import { DEFAULT_PRODUCT_TYPES, DEFAULT_EXPENSE_CATEGORIES } from '@/types';
+
+export async function getProductTypes(): Promise<string[]> {
+    await dbConnect();
+    try {
+        let config = await Configuration.findOne({ key: 'product_types' });
+
+        if (!config) {
+            config = await Configuration.create({ key: 'product_types', value: DEFAULT_PRODUCT_TYPES });
+        }
+
+        return config.value as string[];
+    } catch (error) {
+        console.error("Error fetching product types:", error);
+        return DEFAULT_PRODUCT_TYPES;
+    }
+}
+
+export async function addProductType(type: string): Promise<{ success: boolean; message?: string }> {
+    await dbConnect();
+    try {
+        const config = await Configuration.findOne({ key: 'product_types' });
+        if (!config) {
+            await Configuration.create({ key: 'product_types', value: [...DEFAULT_PRODUCT_TYPES, type] });
+        } else {
+            const types = config.value as string[];
+            if (!types.includes(type)) {
+                types.push(type);
+                config.value = types;
+                config.markModified('value');
+                await config.save();
+            }
+        }
+        revalidatePath('/settings');
+        revalidatePath('/inventory');
+        return { success: true };
+    } catch (error: any) {
+        return { success: false, message: error.message };
+    }
+}
+
+export async function removeProductType(type: string): Promise<{ success: boolean; message?: string }> {
+    await dbConnect();
+    try {
+        const config = await Configuration.findOne({ key: 'product_types' });
+        if (config) {
+            const types = config.value as string[];
+            const newTypes = types.filter(t => t !== type);
+            config.value = newTypes;
+            config.markModified('value');
+            await config.save();
+        }
+        revalidatePath('/settings');
+        revalidatePath('/inventory');
+        return { success: true };
+    } catch (error: any) {
+        return { success: false, message: error.message };
+    }
+}
+
+export async function getExpenseCategories(): Promise<string[]> {
+    await dbConnect();
+    try {
+        let config = await Configuration.findOne({ key: 'expense_categories' });
+
+        if (!config) {
+            config = await Configuration.create({ key: 'expense_categories', value: DEFAULT_EXPENSE_CATEGORIES });
+        }
+
+        return config.value as string[];
+    } catch (error) {
+        console.error("Error fetching expense categories:", error);
+        return DEFAULT_EXPENSE_CATEGORIES;
+    }
+}
+
+export async function addExpenseCategory(category: string): Promise<{ success: boolean; message?: string }> {
+    await dbConnect();
+    try {
+        const config = await Configuration.findOne({ key: 'expense_categories' });
+        if (!config) {
+            await Configuration.create({ key: 'expense_categories', value: [...DEFAULT_EXPENSE_CATEGORIES, category] });
+        } else {
+            const categories = config.value as string[];
+            if (!categories.includes(category)) {
+                categories.push(category);
+                config.value = categories;
+                config.markModified('value');
+                await config.save();
+            }
+        }
+        revalidatePath('/settings');
+        revalidatePath('/expenses');
+        return { success: true };
+    } catch (error: any) {
+        return { success: false, message: error.message };
+    }
+}
+
+export async function removeExpenseCategory(category: string): Promise<{ success: boolean; message?: string }> {
+    await dbConnect();
+    try {
+        const config = await Configuration.findOne({ key: 'expense_categories' });
+        if (config) {
+            const categories = config.value as string[];
+            const newCategories = categories.filter(c => c !== category);
+            config.value = newCategories;
+            config.markModified('value');
+            await config.save();
+        }
+        revalidatePath('/settings');
+        revalidatePath('/expenses');
+        return { success: true };
+    } catch (error: any) {
+        return { success: false, message: error.message };
+    }
+}
 
 export async function getNCFSequences(): Promise<{ type: string; currentValue: number }[]> {
     await dbConnect();

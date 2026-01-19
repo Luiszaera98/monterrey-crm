@@ -29,11 +29,18 @@ export default function InventoryPage() {
     const [isEditOpen, setIsEditOpen] = useState(false);
     const [deleteProduct, setDeleteProduct] = useState<Product | null>(null);
 
+    // Pagination State
+    const [page, setPage] = useState(1);
+    const [totalPages, setTotalPages] = useState(1);
+    const [totalProducts, setTotalProducts] = useState(0);
+
     const fetchProducts = async () => {
         setIsLoading(true);
         try {
-            const data = await getProducts();
-            setProducts(data);
+            const result = await getProducts(page, 20, searchTerm, typeFilter);
+            setProducts(result.products);
+            setTotalPages(result.totalPages);
+            setTotalProducts(result.total);
         } catch (error) {
             console.error("Failed to fetch products", error);
         } finally {
@@ -42,8 +49,22 @@ export default function InventoryPage() {
     };
 
     useEffect(() => {
-        fetchProducts();
-    }, []);
+        // Debounce search to prevent excessive API calls
+        const timer = setTimeout(() => {
+            fetchProducts();
+        }, 300);
+        return () => clearTimeout(timer);
+    }, [page, searchTerm, typeFilter]);
+
+    const handleSearchChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+        setSearchTerm(e.target.value);
+        setPage(1); // Reset to first page on search
+    };
+
+    const handleTypeChange = (value: string) => {
+        setTypeFilter(value as ProductType | 'Todos' | 'Producto Terminado');
+        setPage(1); // Reset to first page on filter
+    };
 
     const handleDelete = async () => {
         if (!deleteProduct) return;
@@ -63,28 +84,12 @@ export default function InventoryPage() {
         setIsEditOpen(true);
     };
 
-    const filteredProducts = products.filter(product =>
-        (product.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-            product.sku.toLowerCase().includes(searchTerm.toLowerCase())) &&
-        (typeFilter === 'Todos' ||
-            (typeFilter === 'Producto Terminado' && product.type === 'Chorizo') ||
-            product.type === typeFilter)
-    );
-
-    if (isLoading) {
-        return (
-            <div className="flex items-center justify-center h-[50vh]">
-                <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary"></div>
-            </div>
-        );
-    }
-
     return (
         <div className="space-y-8">
             <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
                 <div>
                     <h1 className="text-4xl font-bold tracking-tight">Inventario</h1>
-                    <p className="text-muted-foreground mt-1">Gestione sus productos y materias primas.</p>
+                    <p className="text-muted-foreground mt-1">Gestione sus productos y materias primas ({totalProducts} registros).</p>
                 </div>
                 <CreateProductDialog onProductCreated={fetchProducts} />
             </div>
@@ -97,11 +102,11 @@ export default function InventoryPage() {
                             <Input
                                 placeholder="Buscar por nombre o SKU..."
                                 value={searchTerm}
-                                onChange={(e) => setSearchTerm(e.target.value)}
+                                onChange={handleSearchChange}
                                 className="pl-10"
                             />
                         </div>
-                        <Select value={typeFilter} onValueChange={(value) => setTypeFilter(value as ProductType | 'Todos' | 'Producto Terminado')}>
+                        <Select value={typeFilter} onValueChange={handleTypeChange}>
                             <SelectTrigger className="w-full sm:w-[200px]">
                                 <Filter className="mr-2 h-4 w-4 text-muted-foreground" />
                                 <SelectValue placeholder="Tipo de Producto" />
@@ -131,8 +136,16 @@ export default function InventoryPage() {
                                 </TableRow>
                             </TableHeader>
                             <TableBody>
-                                {filteredProducts.length > 0 ? (
-                                    filteredProducts.map((product) => (
+                                {isLoading ? (
+                                    <TableRow>
+                                        <TableCell colSpan={9} className="h-24 text-center">
+                                            <div className="flex justify-center items-center">
+                                                <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div>
+                                            </div>
+                                        </TableCell>
+                                    </TableRow>
+                                ) : products.length > 0 ? (
+                                    products.map((product) => (
                                         <TableRow key={product.id} className="hover:bg-muted/30">
                                             <TableCell className="font-mono text-xs text-muted-foreground">{product.sku}</TableCell>
                                             <TableCell className="font-medium">{product.name}</TableCell>
@@ -200,6 +213,31 @@ export default function InventoryPage() {
                                 )}
                             </TableBody>
                         </Table>
+                    </div>
+
+                    {/* Pagination Controls */}
+                    <div className="flex items-center justify-end space-x-2 py-4">
+                        <div className="flex-1 text-sm text-muted-foreground">
+                            Página {page} de {totalPages}
+                        </div>
+                        <div className="space-x-2">
+                            <Button
+                                variant="outline"
+                                size="sm"
+                                onClick={() => setPage(p => Math.max(1, p - 1))}
+                                disabled={page === 1 || isLoading}
+                            >
+                                Anterior
+                            </Button>
+                            <Button
+                                variant="outline"
+                                size="sm"
+                                onClick={() => setPage(p => Math.min(totalPages, p + 1))}
+                                disabled={page === totalPages || isLoading}
+                            >
+                                Siguiente
+                            </Button>
+                        </div>
                     </div>
                 </CardContent>
             </Card>
