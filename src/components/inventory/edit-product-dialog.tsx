@@ -138,9 +138,9 @@ export function EditProductDialog({ product, open, onOpenChange, onSuccess }: Ed
                         </div>
 
                         <div className="space-y-2">
-                            <Label htmlFor="type">Tipo de Producto</Label>
-                            <Select value={type} onValueChange={(val) => setType(val as ProductType)} disabled>
-                                <SelectTrigger className="bg-muted">
+                            <Label htmlFor="type">Categoría</Label>
+                            <Select value={type} onValueChange={(val) => setType(val as ProductType)}>
+                                <SelectTrigger>
                                     <SelectValue />
                                 </SelectTrigger>
                                 <SelectContent>

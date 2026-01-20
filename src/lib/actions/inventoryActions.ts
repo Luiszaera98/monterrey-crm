@@ -7,12 +7,8 @@ import { revalidatePath } from 'next/cache';
 
 // Helper to convert MongoDB document to Product type
 function mapProduct(doc: any): Product {
-    // Map category back to type for compatibility if needed, or use stored category
-    // Assuming 'category' field in DB stores 'Chorizo' or 'Materia Prima' now
-    let type: ProductType = 'Materia Prima';
-    if (doc.category === 'Chorizo' || doc.category === 'Producto Terminado') {
-        type = 'Chorizo';
-    }
+    // Use the stored category directly as the type
+    const type = doc.category || doc.type || 'Materia Prima';
 
     return {
         id: doc._id.toString(),
@@ -25,14 +21,15 @@ function mapProduct(doc: any): Product {
         minStock: doc.minStock,
         unit: doc.unit,
         description: doc.description,
-        category: doc.category,
+        category: doc.category, // Keep for backward compat if needed
         createdAt: doc.createdAt.toISOString(),
         updatedAt: doc.updatedAt.toISOString(),
     };
 }
 
 async function generateSKU(type: ProductType): Promise<string> {
-    const prefix = type === 'Chorizo' ? 'CHO' : 'MP';
+    // Generate prefix: CHO for Chorizo, first 3 letters for others
+    const prefix = type === 'Chorizo' ? 'CHO' : type.substring(0, 3).toUpperCase();
 
     // Find latest product with this prefix
     const latestProduct = await ProductModel.findOne({

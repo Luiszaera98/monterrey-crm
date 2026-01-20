@@ -109,7 +109,7 @@ export default function InventoryPage() {
                         <Select value={typeFilter} onValueChange={handleTypeChange}>
                             <SelectTrigger className="w-full sm:w-[200px]">
                                 <Filter className="mr-2 h-4 w-4 text-muted-foreground" />
-                                <SelectValue placeholder="Tipo de Producto" />
+                                <SelectValue placeholder="Categoría" />
                             </SelectTrigger>
                             <SelectContent>
                                 <SelectItem value="Todos">Todos</SelectItem>
@@ -126,7 +126,6 @@ export default function InventoryPage() {
                                 <TableRow>
                                     <TableHead>SKU</TableHead>
                                     <TableHead>Nombre</TableHead>
-                                    <TableHead>Tipo</TableHead>
                                     <TableHead>Categoría</TableHead>
                                     <TableHead>Fecha Creación</TableHead>
                                     <TableHead className="text-right">Stock</TableHead>
@@ -151,10 +150,9 @@ export default function InventoryPage() {
                                             <TableCell className="font-medium">{product.name}</TableCell>
                                             <TableCell>
                                                 <Badge variant="outline">
-                                                    {product.type === 'Chorizo' ? 'Producto Terminado' : product.type}
+                                                    {product.type}
                                                 </Badge>
                                             </TableCell>
-                                            <TableCell>{product.category}</TableCell>
                                             <TableCell className="text-sm text-muted-foreground">
                                                 {product.createdAt ? format(new Date(product.createdAt), 'dd MMM yyyy', { locale: es }) : '-'}
                                             </TableCell>

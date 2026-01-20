@@ -140,7 +140,7 @@ export function CreateProductDialog({ onProductCreated }: CreateProductDialogPro
                 <form onSubmit={handleSubmit} className="space-y-4 py-4">
 
                     <div className="space-y-2">
-                        <Label htmlFor="type">Tipo de Producto *</Label>
+                        <Label htmlFor="type">Categoría *</Label>
                         <Select value={type} onValueChange={(val) => {
                             setType(val as ProductType);
                             setName(''); // Reset name selection
