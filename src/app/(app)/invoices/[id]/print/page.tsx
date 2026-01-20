@@ -57,7 +57,7 @@ export default function InvoicePrintPage({ params }: { params: { id: string } })
     };
 
     return (
-        <div className="bg-white text-black p-8 max-w-[216mm] mx-auto min-h-screen font-sans text-xs leading-tight relative selection:bg-gray-200">
+        <div id="invoice-print-content" className="bg-white text-black p-8 max-w-[216mm] mx-auto min-h-screen font-sans text-xs leading-tight relative selection:bg-gray-200">
 
             {/* Watermark for Anulada */}
             {invoice.status === 'Anulada' && (
@@ -222,10 +222,38 @@ export default function InvoicePrintPage({ params }: { params: { id: string } })
 
             <style jsx global>{`
                 @media print {
-                    @page { margin: 10mm; }
+                    @page { 
+                        margin: 0;
+                        size: auto;
+                    }
+                    
+                    /* Hide everything by default */
+                    body * {
+                        visibility: hidden;
+                    }
+
+                    /* Only show the invoice content */
+                    #invoice-print-content, #invoice-print-content * {
+                        visibility: visible;
+                    }
+
+                    /* Position the invoice content at top-left */
+                    #invoice-print-content {
+                        position: absolute;
+                        left: 0;
+                        top: 0;
+                        width: 100%;
+                        margin: 0;
+                        padding: 20mm; /* Restore padding visually for the print */
+                        background-color: white !important;
+                        min-height: auto !important; /* Avoid forcing extra pages */
+                    }
+
+                    /* Ensure background graphics are printed (for colors etc) */
                     body { 
                         -webkit-print-color-adjust: exact; 
                         print-color-adjust: exact;
+                        background: white !important;
                     }
                 }
             `}</style>

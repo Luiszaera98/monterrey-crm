@@ -54,14 +54,14 @@ export function EditInvoiceDialog({ invoice, open, onOpenChange, onSuccess }: Ed
             if (open && invoice) {
                 try {
                     // Fetch all needed data including the FULL invoice (to get items)
-                    const [clientsData, productsData, fullInvoiceData] = await Promise.all([
-                        getClients(),
-                        getProducts(),
+                    const [clientsResult, productsResult, fullInvoiceData] = await Promise.all([
+                        getClients(1, 1000),
+                        getProducts(1, 1000),
                         getInvoiceById(invoice.id)
                     ]);
 
-                    setClients(clientsData);
-                    setProducts(productsData);
+                    setClients(clientsResult.clients || []);
+                    setProducts(productsResult.products || []);
 
                     if (fullInvoiceData) {
                         populateForm(fullInvoiceData);
