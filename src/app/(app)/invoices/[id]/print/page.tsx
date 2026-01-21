@@ -3,7 +3,7 @@
 import React, { useEffect, useState } from 'react';
 import { getInvoiceById } from '@/lib/actions/invoiceActions';
 import { getCreditNotesByInvoice } from '@/lib/actions/paymentActions';
-import { Invoice, CreditNote } from '@/types';
+import { Invoice, CreditNote, NCF_TYPES } from '@/types';
 import { format } from 'date-fns';
 import { es } from 'date-fns/locale';
 
@@ -56,6 +56,14 @@ export default function InvoicePrintPage({ params }: { params: { id: string } })
         instagram: "@industriasmonterreysrl"
     };
 
+    const getNcfTitle = () => {
+        if (!invoice.ncfType) return 'Factura de Venta';
+        if (invoice.ncfType === 'S/C') return 'Sin Comprobante Fiscal';
+        // @ts-ignore
+        const typeName = NCF_TYPES[invoice.ncfType];
+        return typeName ? `Factura de ${typeName}` : 'Factura de Crédito Fiscal';
+    };
+
     return (
         <div id="invoice-print-content" className="bg-white text-black p-8 max-w-[216mm] mx-auto min-h-screen font-sans text-xs leading-tight relative selection:bg-gray-200">
 
@@ -89,9 +97,11 @@ export default function InvoicePrintPage({ params }: { params: { id: string } })
                 </div>
 
                 <div className="text-right pt-2">
-                    <h2 className="text-lg font-bold uppercase mb-2">Factura de Crédito Fiscal</h2>
+                    <h2 className="text-lg font-bold uppercase mb-2">{getNcfTitle()}</h2>
                     <div className="space-y-1 text-sm">
-                        <p><span className="font-bold">NCF:</span> {invoice.ncf || 'B0100000000'}</p>
+                        {invoice.ncfType !== 'S/C' && (
+                            <p><span className="font-bold">NCF:</span> {invoice.ncf || 'S/N'}</p>
+                        )}
                         <p><span className="font-bold">Fecha:</span> {format(new Date(invoice.date), 'dd/MM/yyyy')}</p>
                         <p><span className="font-bold text-red-700">Vence:</span> {format(new Date(invoice.dueDate), 'dd/MM/yyyy')}</p>
                     </div>
