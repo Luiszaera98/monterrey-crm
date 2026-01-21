@@ -57,8 +57,8 @@ export default function InvoicePrintPage({ params }: { params: { id: string } })
     };
 
     const getNcfTitle = () => {
-        if (!invoice.ncfType) return 'Factura de Venta';
-        if (invoice.ncfType === 'S/C') return 'Sin Comprobante Fiscal';
+        if (!invoice.ncfType) return 'Factura';
+        if (invoice.ncfType === 'S/C') return 'Factura';
         // @ts-ignore
         const typeName = NCF_TYPES[invoice.ncfType];
         return typeName ? `Factura de ${typeName}` : 'Factura de Crédito Fiscal';
