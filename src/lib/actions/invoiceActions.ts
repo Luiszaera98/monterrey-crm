@@ -1,7 +1,7 @@
 "use server";
 
 import dbConnect from '@/lib/db';
-import { Invoice as InvoiceModel, Product as ProductModel, Payment as PaymentModel, CreditNote as CreditNoteModel, Client as ClientModel, User as UserModel } from '@/models';
+import { Invoice as InvoiceModel, Product as ProductModel, Payment as PaymentModel, CreditNote as CreditNoteModel, Client as ClientModel, User as UserModel, InventoryMovement as InventoryMovementModel } from '@/models';
 import { Invoice, InvoiceStatus } from '@/types';
 import { revalidatePath } from 'next/cache';
 import { getNextNCF, syncNCFSequences } from './settingsActions';
@@ -14,7 +14,7 @@ function mapInvoice(doc: any): Invoice {
     return {
         id: doc._id.toString(),
         number: doc.number,
-        ncf: doc.ncf,
+        ncf: doc.ncf || 'S/C',
         ncfType: doc.ncfType,
         clientId: doc.clientId,
         clientName: doc.clientName,
@@ -23,8 +23,8 @@ function mapInvoice(doc: any): Invoice {
         soldBy: doc.soldBy,
         sellerEmail: doc.sellerEmail,
         paymentTerms: doc.paymentTerms,
-        date: doc.date.toISOString(),
-        dueDate: doc.dueDate.toISOString(),
+        date: doc.date instanceof Date ? doc.date.toISOString() : doc.date,
+        dueDate: doc.dueDate instanceof Date ? doc.dueDate.toISOString() : doc.dueDate,
         status: doc.status,
         subtotal: doc.subtotal,
         discount: doc.discount,
@@ -35,8 +35,8 @@ function mapInvoice(doc: any): Invoice {
         payments: doc.payments,
         creditNotes: doc.creditNotes,
         notes: doc.notes,
-        createdAt: doc.createdAt.toISOString(),
-        updatedAt: doc.updatedAt.toISOString(),
+        createdAt: doc.createdAt instanceof Date ? doc.createdAt.toISOString() : doc.createdAt,
+        updatedAt: doc.updatedAt instanceof Date ? doc.updatedAt.toISOString() : doc.updatedAt,
     };
 }
 
@@ -169,7 +169,11 @@ export async function createInvoice(data: {
 
         // 3. Generate Numbers
         const invoiceNumber = await generateInvoiceNumber();
-        const ncf = await getNextNCF(data.ncfType, session);
+
+        let ncf = undefined; // Leave undefined for S/C to avoid unique constraint (sparse index)
+        if (data.ncfType !== 'S/C') {
+            ncf = await getNextNCF(data.ncfType, session);
+        }
 
         // 4. Create Invoice
         const [newInvoice] = await InvoiceModel.create([{
@@ -196,8 +200,13 @@ export async function createInvoice(data: {
             creditNotes: []
         }], { session });
 
-        // 5. Update Inventory Stock (Bulk)
-        await bulkUpdateStock(stockItems, 'subtract', session);
+        // 5. Update Inventory Stock & Log Movement
+        await bulkUpdateStock(stockItems, 'subtract', session, {
+            type: 'SALIDA',
+            reference: invoiceNumber, // Use Invoice Number as reference linked to this operation
+            date: data.date,
+            notes: `Factura ${invoiceNumber}`
+        });
 
         return { success: true, invoice: mapInvoice(newInvoice.toObject()) };
     }).catch(async (error) => {
@@ -243,20 +252,22 @@ export async function updateInvoice(id: string, data: {
             throw new Error("Factura no encontrada");
         }
 
-        // 1. Revert Old Stock
+        // 1. Revert Old Stock (PHYSICAL ONLY, NO LOG)
+        // We do NOT pass metadata here, so no 'ENTRADA' log is created.
         const oldItems: StockItem[] = existingInvoice.items.map((i: any) => ({
             productId: i.productId, quantity: i.quantity
         }));
+        await bulkUpdateStock(oldItems, 'add', session);
+
+        // 2. Remove Old History Logs
+        // Per user request: eliminate the output record if invoice is modified
+        await InventoryMovementModel.deleteMany({ reference: existingInvoice.number }, { session });
+
+        // 3. Validate & Prepare New Items
         const newItems: StockItem[] = data.items.map(i => ({
             productId: i.productId, quantity: i.quantity, productName: i.productName
         }));
 
-        await bulkUpdateStock(oldItems, 'add', session);
-
-        // 2. Validate availability for New Items
-        // Since we are in a transaction, we should fetch current stock.
-        // Note: bulkUpdateStock used $inc, so the DB has the updated stock.
-        // We need to fetch it to validate.
         if (session) {
             const productIds = newItems.map(i => i.productId);
             const products = await ProductModel.find({ _id: { $in: productIds } }).session(session).lean();
@@ -269,13 +280,16 @@ export async function updateInvoice(id: string, data: {
             }
         }
 
-        await bulkUpdateStock(newItems, 'subtract', session);
+        // 4. Update Stock & Create New Logs
+        await bulkUpdateStock(newItems, 'subtract', session, {
+            type: 'SALIDA',
+            reference: existingInvoice.number, // Reuse existing number
+            date: data.date,
+            notes: `Factura ${existingInvoice.number} (Editada)`
+        });
 
         // Calculate item totals
         const invoiceItems = await Promise.all(data.items.map(async (item, index) => {
-            // Re-fetch or reuse map if optimized. For now sticking to logic.
-            // We need product details for description if we don't have it.
-            // Assuming product data didn't change drastically.
             const product = await ProductModel.findById(item.productId).session(session || null).lean();
 
             const subtotal = item.quantity * item.price;
@@ -331,6 +345,7 @@ export async function updateInvoice(id: string, data: {
     }).then(res => {
         if (res.success) {
             revalidatePath('/invoices');
+            revalidatePath('/inventory');
         }
         return res;
     });
@@ -345,35 +360,23 @@ export async function deleteInvoiceAction(id: string): Promise<{ success: boolea
             throw new Error("Factura no encontrada");
         }
 
-        // Restore stock for invoice items
+        // 1. Restore Stock (PHYSICAL ONLY, NO LOG)
         const stockItems: StockItem[] = invoice.items.map((i: any) => ({
             productId: i.productId, quantity: i.quantity
         }));
         await bulkUpdateStock(stockItems, 'add', session);
 
+        // 2. Remove History Logs
+        await InventoryMovementModel.deleteMany({ reference: invoice.number }, { session });
+
         // Cascade delete Credit Notes (and revert their stock effect)
         const creditNotes = await CreditNoteModel.find({ originalInvoiceId: id }).session(session || null);
 
         for (const cn of creditNotes) {
-            // Revert credit note stock logic:
-            // Credit Notes ADDED back stock when created.
-            // If we delete the credit note, we should technically remove that stock again?
-            // Wait, "createCreditNote" calls "return stock".
-            // So if we delete the Credit Note as part of deleting the invoice...
-            // Logic: The Invoice Sale removed Stock (-10).
-            // Credit Note returned Stock (+10).
-            // Net Stock impact: 0.
-            // If we delete EVERYTHING:
-            // We revert Invoice Sale (+10).
-            // We revert Credit Note (+10 -> -10).
-            // Net impact: 0.
-            // So yes, we must revert the Credit Note effect.
-            // Credit note items:
             const cnItems: StockItem[] = cn.items.map((i: any) => ({
                 productId: i.productId, quantity: i.quantity
             }));
             await bulkUpdateStock(cnItems, 'subtract', session);
-
             await CreditNoteModel.findByIdAndDelete(cn._id).session(session || null);
         }
 
@@ -387,7 +390,7 @@ export async function deleteInvoiceAction(id: string): Promise<{ success: boolea
         console.error('Error deleting invoice:', error);
         return { success: false, message: error.message || "Error al eliminar factura" };
     }).then(async res => {
-        if (res.success) {
+        if (res && res.success) {
             await syncNCFSequences();
             revalidatePath('/invoices');
             revalidatePath('/inventory');

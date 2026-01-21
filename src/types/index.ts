@@ -36,6 +36,20 @@ export interface Product {
     updatedAt: Date | string;
 }
 
+export type MovementType = 'ENTRADA' | 'SALIDA' | 'AJUSTE';
+
+export interface InventoryMovement {
+    id: string;
+    productId: string;
+    productName: string;
+    type: MovementType;
+    quantity: number;
+    reference?: string; // e.g. Invoice Number or 'Manual'
+    notes?: string;
+    date: Date | string;
+    createdAt: Date | string;
+}
+
 export type InvoiceStatus = 'Pagada' | 'Pendiente' | 'Vencida' | 'Anulada' | 'Parcial' | 'Nota de Crédito Parcial';
 
 // NCF Types for Dominican Republic (DGII)
@@ -47,7 +61,8 @@ export const NCF_TYPES = {
     'B04': 'Nota de Crédito',
     'B14': 'Regímenes Especiales',
     'B15': 'Gubernamental',
-    'B16': 'Exportaciones'
+    'B16': 'Exportaciones',
+    'S/C': 'Sin Comprobante Fiscal'
 };
 
 export type PaymentMethod = 'Efectivo' | 'Transferencia' | 'Cheque' | 'Tarjeta';

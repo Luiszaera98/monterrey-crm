@@ -180,3 +180,71 @@ export async function deleteProductAction(id: string): Promise<{ success: boolea
         return { success: false, message: error.message || "Error al eliminar producto" };
     }
 }
+
+import { bulkUpdateStock } from '@/lib/inventoryUtils';
+import { InventoryMovement as InventoryMovementModel } from '@/models';
+import { InventoryMovement } from '@/types';
+
+function mapMovement(doc: any): InventoryMovement {
+    return {
+        id: doc._id.toString(),
+        productId: doc.productId,
+        productName: doc.productName,
+        type: doc.type,
+        quantity: doc.quantity,
+        reference: doc.reference,
+        notes: doc.notes,
+        date: doc.date.toISOString(),
+        createdAt: doc.createdAt.toISOString()
+    };
+}
+
+export async function addProductStock(productId: string, quantity: number, date: string, notes?: string): Promise<{ success: boolean; message?: string }> {
+    await dbConnect();
+    try {
+        if (quantity <= 0) throw new Error("La cantidad debe ser mayor a 0");
+
+        const product = await ProductModel.findById(productId);
+        if (!product) throw new Error("Producto no encontrado");
+
+        await bulkUpdateStock([{ productId, quantity, productName: product.name }], 'add', undefined, {
+            type: 'ENTRADA',
+            date: date,
+            notes: notes || 'Reabastecimiento manual',
+            reference: 'Manual'
+        });
+
+        revalidatePath('/inventory');
+        return { success: true };
+    } catch (error: any) {
+        console.error("Error adding stock:", error);
+        return { success: false, message: error.message };
+    }
+}
+
+export async function getInventoryMovements(month?: string, year?: string): Promise<InventoryMovement[]> {
+    await dbConnect();
+    try {
+        const query: any = {};
+
+        if (month && year) {
+            const m = parseInt(month); // 0-11 if matching Date.getMonth, but UI usually sends 0-11 or 1-12. Let's assume 0-11 from typical JS Date logic, but verify UI.
+            // Usually month select is 0-11.
+            // Server side logic:
+            const y = parseInt(year);
+
+            // Create dates in UTC to match simplistic day filtering or match user timezone?
+            // Since we store date as Date object (UTC usually), let's query broadly.
+            const startDate = new Date(y, m, 1);
+            const endDate = new Date(y, m + 1, 0, 23, 59, 59, 999);
+
+            query.date = { $gte: startDate, $lte: endDate };
+        }
+
+        const movements = await InventoryMovementModel.find(query).sort({ date: -1, createdAt: -1 }).lean();
+        return movements.map(mapMovement);
+    } catch (error) {
+        console.error("Error fetching inventory movements:", error);
+        return [];
+    }
+}

@@ -394,3 +394,32 @@ const ConfigurationSchema = new Schema<IConfiguration>({
 }, { timestamps: true });
 
 export const Configuration: Model<IConfiguration> = mongoose.models.Configuration || mongoose.model<IConfiguration>('Configuration', ConfigurationSchema);
+
+// ==================== INVENTORY MOVEMENT ====================
+export interface IInventoryMovement extends Document {
+    productId: string;
+    productName: string;
+    type: 'ENTRADA' | 'SALIDA' | 'AJUSTE';
+    quantity: number;
+    reference?: string;
+    notes?: string;
+    date: Date;
+    createdAt: Date;
+}
+
+const InventoryMovementSchema = new Schema<IInventoryMovement>({
+    productId: { type: String, required: true },
+    productName: { type: String, required: true },
+    type: { type: String, enum: ['ENTRADA', 'SALIDA', 'AJUSTE'], required: true },
+    quantity: { type: Number, required: true },
+    reference: { type: String },
+    notes: { type: String },
+    date: { type: Date, required: true, default: Date.now },
+}, { timestamps: true });
+
+// Indexes for performance
+InventoryMovementSchema.index({ productId: 1 });
+InventoryMovementSchema.index({ date: -1 });
+InventoryMovementSchema.index({ type: 1 });
+
+export const InventoryMovement: Model<IInventoryMovement> = mongoose.models.InventoryMovement || mongoose.model<IInventoryMovement>('InventoryMovement', InventoryMovementSchema);

@@ -1,4 +1,4 @@
-import { Product as ProductModel } from '@/models';
+import { Product as ProductModel, InventoryMovement as InventoryMovementModel } from '@/models';
 import mongoose from 'mongoose';
 
 export type StockOperation = 'add' | 'subtract';
@@ -12,19 +12,28 @@ export interface StockItem {
 /**
  * Performs a bulk update of product stock.
  * Uses MongoDB bulkWrite for performance.
+ * Also records history if metadata is provided.
  * @param items List of items to update
  * @param operation 'add' to increase stock, 'subtract' to decrease
  * @param session Optional Mongoose session for transactions
+ * @param metadata Optional metadata to record this movement in history
  */
 export async function bulkUpdateStock(
     items: StockItem[],
     operation: StockOperation,
-    session?: mongoose.ClientSession
+    session?: mongoose.ClientSession,
+    metadata?: {
+        type?: 'ENTRADA' | 'SALIDA' | 'AJUSTE',
+        reference?: string,
+        date?: Date | string,
+        notes?: string
+    }
 ) {
     if (items.length === 0) return;
 
     const multiplier = operation === 'add' ? 1 : -1;
 
+    // 1. Update Product Stock
     const operations = items.map(item => ({
         updateOne: {
             filter: { _id: item.productId },
@@ -33,6 +42,42 @@ export async function bulkUpdateStock(
     }));
 
     await ProductModel.bulkWrite(operations, { session });
+
+    // 2. Record History (if metadata implies meaningful movement)
+    // We default to recording if metadata is passed, or if we want to enforce it globally.
+    // For now, only record if metadata is explicitly passed to avoid breaking changes or unwanted logs.
+    if (metadata) {
+        // Determine type if not provided. 
+        // add -> ENTRADA (usually), subtract -> SALIDA (usually)
+        const type = metadata.type || (operation === 'add' ? 'ENTRADA' : 'SALIDA');
+
+        // Parse date carefully to avoid timezone shifts (e.g. YYYY-MM-DD becomes previous day if interpreted as UTC 00:00)
+        let movementDate = new Date();
+        if (metadata.date) {
+            if (metadata.date instanceof Date) {
+                movementDate = metadata.date;
+            } else if (typeof metadata.date === 'string') {
+                // If it's a simple date string (YYYY-MM-DD), force noon to stay in same day across Western timestamps
+                if (!metadata.date.includes('T')) {
+                    movementDate = new Date(`${metadata.date}T12:00:00`);
+                } else {
+                    movementDate = new Date(metadata.date);
+                }
+            }
+        }
+
+        const movements = items.map(item => ({
+            productId: item.productId,
+            productName: item.productName || 'Desconocido',
+            type: type,
+            quantity: item.quantity,
+            reference: metadata.reference,
+            notes: metadata.notes,
+            date: movementDate
+        }));
+
+        await InventoryMovementModel.insertMany(movements, { session });
+    }
 }
 
 /**
