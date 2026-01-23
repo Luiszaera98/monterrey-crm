@@ -227,6 +227,21 @@ export async function getDashboardAnalytics(month?: string, year?: string, timez
         }
     };
 
+    // 6. Global Balances (Snapshot)
+    const receivables = await InvoiceModel.aggregate([
+        { $match: { status: { $in: ['Pendiente', 'Parcial', 'Nota de Crédito Parcial', 'Vencida'] } } },
+        { $group: { _id: null, total: { $sum: { $subtract: ["$total", "$paidAmount"] } } } }
+    ]);
+    const totalReceivables = receivables[0]?.total || 0;
+
+    const payables = await ExpenseModel.aggregate([
+        { $match: { status: { $in: ['Pendiente', 'Parcial'] } } },
+        { $group: { _id: null, total: { $sum: { $subtract: ["$amount", { $ifNull: ["$paidAmount", 0] }] } } } }
+    ]);
+    const totalPayables = payables[0]?.total || 0;
+
+    const netBalance = (totalReceivables + stockSummary.totalValue) - totalPayables;
+
     return {
         evolutionData,
         currentMonthData: currentMonthEntry || { invoiced: 0, collected: 0, expenses: 0 },
@@ -236,6 +251,12 @@ export async function getDashboardAnalytics(month?: string, year?: string, timez
         topClientsBilling: topClientsBilling.map(c => ({ name: c._id, value: c.total })),
         topClientsPayment: topClientsPayment.map(c => ({ name: c._id, value: c.total })),
         stockSummary,
-        topExpenses: topExpenses.map(e => ({ name: e._id, value: e.total }))
+        topExpenses: topExpenses.map(e => ({ name: e._id, value: e.total })),
+        globalBalance: {
+            receivables: totalReceivables,
+            payables: totalPayables,
+            net: netBalance,
+            inventory: stockSummary.totalValue
+        }
     };
 }

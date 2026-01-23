@@ -94,37 +94,66 @@ export default function DashboardPage() {
             </div>
 
             {/* Key Metrics Cards */}
-            <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-4">
-                <MetricCard
-                    title="Ingresos Totales"
-                    value={currentMonthData?.collected || 0}
-                    previousValue={comparisonData?.collected || 0}
-                    isMTD={comparisonData?.isMTD}
-                    icon={DollarSign}
-                    color="slate"
-                    metrics={analytics?.metrics?.collected}
-                />
-                <MetricCard
-                    title="Facturación"
-                    value={currentMonthData?.invoiced || 0}
-                    previousValue={comparisonData?.invoiced || 0}
-                    isMTD={comparisonData?.isMTD}
-                    icon={Activity}
-                    color="slate"
-                    metrics={analytics?.metrics?.invoiced}
-                />
-                <MetricCard
-                    title="Gastos"
-                    value={currentMonthData?.expenses || 0}
-                    previousValue={comparisonData?.expenses || 0}
-                    isMTD={comparisonData?.isMTD}
-                    icon={TrendingDown}
-                    color="slate"
-                    metrics={analytics?.metrics?.expenses}
-                />
+            <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
+
+                {/* 1. Flujo de Caja (Mes) */}
+                <Card className="border-border shadow-sm bg-card hover:shadow-md transition-all duration-200 ring-1 ring-primary/10">
+                    <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                        <CardTitle className="text-sm font-medium text-muted-foreground">Flujo de Caja (Mes)</CardTitle>
+                        <div className={cn("p-2 rounded-lg", ((currentMonthData?.collected || 0) - (currentMonthData?.expenses || 0)) >= 0 ? "bg-emerald-100 dark:bg-emerald-900/30" : "bg-rose-100 dark:bg-rose-900/30")}>
+                            <DollarSign className={cn("h-4 w-4", ((currentMonthData?.collected || 0) - (currentMonthData?.expenses || 0)) >= 0 ? "text-emerald-600 dark:text-emerald-400" : "text-rose-600 dark:text-rose-400")} />
+                        </div>
+                    </CardHeader>
+                    <CardContent>
+                        <div className={cn("text-2xl font-bold mt-2", ((currentMonthData?.collected || 0) - (currentMonthData?.expenses || 0)) >= 0 ? "text-emerald-600 dark:text-emerald-400" : "text-rose-600")}>
+                            ${((currentMonthData?.collected || 0) - (currentMonthData?.expenses || 0)).toLocaleString('es-DO', { maximumFractionDigits: 0 })}
+                        </div>
+                        <p className="text-xs text-muted-foreground mt-1 font-medium leading-tight">
+                            Ingresos: ${(currentMonthData?.collected || 0).toLocaleString('es-DO', { maximumFractionDigits: 0 })} - Gastos: ${(currentMonthData?.expenses || 0).toLocaleString('es-DO', { maximumFractionDigits: 0 })}
+                        </p>
+                    </CardContent>
+                </Card>
+
+                {/* 2. Solvencia Total (Patrimonio) */}
                 <Card className="border-border shadow-sm bg-card hover:shadow-md transition-all duration-200">
                     <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                        <CardTitle className="text-sm font-medium text-muted-foreground">Inventario</CardTitle>
+                        <CardTitle className="text-sm font-medium text-muted-foreground">Solvencia Total</CardTitle>
+                        <div className="p-2 bg-blue-100 rounded-lg dark:bg-blue-900/30">
+                            <TrendingUp className="h-4 w-4 text-blue-600 dark:text-blue-400" />
+                        </div>
+                    </CardHeader>
+                    <CardContent>
+                        <div className="text-2xl font-bold text-foreground mt-2">
+                            ${(analytics?.globalBalance?.net || 0).toLocaleString('es-DO', { maximumFractionDigits: 0 })}
+                        </div>
+                        <p className="text-xs text-muted-foreground mt-1 font-medium leading-tight">
+                            (Inventario + CxC) - Deudas
+                        </p>
+                    </CardContent>
+                </Card>
+
+                {/* 3. Cuentas por Pagar (Alerta) */}
+                <Card className="border-border shadow-sm bg-card hover:shadow-md transition-all duration-200">
+                    <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                        <CardTitle className="text-sm font-medium text-muted-foreground">Cuentas por Pagar</CardTitle>
+                        <div className="p-2 bg-rose-100 rounded-lg dark:bg-rose-900/30">
+                            <AlertTriangle className="h-4 w-4 text-rose-600 dark:text-rose-400" />
+                        </div>
+                    </CardHeader>
+                    <CardContent>
+                        <div className="text-2xl font-bold text-rose-600 dark:text-rose-400 mt-2">
+                            ${(analytics?.globalBalance?.payables || 0).toLocaleString('es-DO', { maximumFractionDigits: 0 })}
+                        </div>
+                        <p className="text-xs text-muted-foreground mt-1 font-medium">
+                            Total de gastos pendientes
+                        </p>
+                    </CardContent>
+                </Card>
+
+                {/* 4. Valor en Inventario */}
+                <Card className="border-border shadow-sm bg-card hover:shadow-md transition-all duration-200">
+                    <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                        <CardTitle className="text-sm font-medium text-muted-foreground">Valor en Inventario</CardTitle>
                         <div className="p-2 bg-muted rounded-lg">
                             <Package className="h-4 w-4 text-muted-foreground" />
                         </div>
@@ -138,6 +167,28 @@ export default function DashboardPage() {
                         </p>
                     </CardContent>
                 </Card>
+
+                {/* 5. Ingresos Reales (MetricCard) */}
+                <MetricCard
+                    title="Ingresos del Mes"
+                    value={currentMonthData?.collected || 0}
+                    previousValue={comparisonData?.collected || 0}
+                    isMTD={comparisonData?.isMTD}
+                    icon={CreditCard}
+                    color="slate"
+                    metrics={analytics?.metrics?.collected}
+                />
+
+                {/* 6. Gastos Totales (MetricCard) */}
+                <MetricCard
+                    title="Gastos del Mes"
+                    value={currentMonthData?.expenses || 0}
+                    previousValue={comparisonData?.expenses || 0}
+                    isMTD={comparisonData?.isMTD}
+                    icon={TrendingDown}
+                    color="slate"
+                    metrics={analytics?.metrics?.expenses}
+                />
             </div>
 
             {/* Evolution Charts */}

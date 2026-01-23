@@ -277,16 +277,30 @@ export async function getExpenses(
     }
 }
 
+// Helper to parse dates strictly preventing timezone shifts
+function parseSafeDate(dateInput: string | Date | undefined): Date {
+    if (!dateInput) return new Date();
+    if (dateInput instanceof Date) return dateInput;
+    // If string YYYY-MM-DD, append T12:00:00 to force noon local/UTC balance
+    if (typeof dateInput === 'string' && !dateInput.includes('T')) {
+        return new Date(`${dateInput}T12:00:00`);
+    }
+    return new Date(dateInput);
+}
+
+// ... (keep mapExpense, mapRecurringExpense, checkAndGenerateRecurringExpenses, mapExpenseTransaction, getExpenseTransactions, getMonthlyExpenseTotal, getExpenses)
+
 export async function createExpense(data: Omit<Expense, 'id' | 'createdAt' | 'updatedAt'>): Promise<{ success: boolean; expense?: Expense; message?: string }> {
     await dbConnect();
     try {
         const paidAmount = data.status === 'Pagada' ? data.amount : (data.paidAmount || 0);
+        const safeDate = parseSafeDate(data.date);
 
         const newExpense = await ExpenseModel.create({
             description: data.description,
             category: data.category,
             amount: data.amount,
-            date: data.date,
+            date: safeDate,
             supplier: data.supplierName,
             invoiceNumber: data.invoiceNumber,
             paymentMethod: data.paymentMethod || 'Efectivo',
@@ -303,7 +317,7 @@ export async function createExpense(data: Omit<Expense, 'id' | 'createdAt' | 'up
                 expenseId: newExpense._id.toString(),
                 amount: data.amount,
                 paymentMethod: data.paymentMethod || 'Efectivo',
-                date: new Date(data.date),
+                date: safeDate,
                 notes: data.notes,
                 attachments: data.attachments || []
             });
@@ -324,7 +338,6 @@ export async function updateExpense(id: string, data: Partial<Expense>): Promise
             description: data.description,
             category: data.category,
             amount: data.amount,
-            date: data.date,
             supplier: data.supplierName,
             invoiceNumber: data.invoiceNumber,
             paymentMethod: data.paymentMethod,
@@ -333,6 +346,10 @@ export async function updateExpense(id: string, data: Partial<Expense>): Promise
             paidAmount: data.paidAmount,
             notes: data.notes
         };
+
+        if (data.date) {
+            updateData.date = parseSafeDate(data.date);
+        }
 
         // Logic to maintain consistency between status and paidAmount
         if (data.status === 'Pendiente') {
@@ -374,12 +391,14 @@ export async function registerExpensePayment(id: string, amount: number, payment
             return { success: false, message: "Gasto no encontrado" };
         }
 
+        const safeDate = parseSafeDate(date);
+
         // Create transaction record
         await ExpenseTransactionModel.create({
             expenseId: id,
             amount: amount,
             paymentMethod: paymentMethod,
-            date: new Date(date),
+            date: safeDate,
             attachments: attachments || []
         });
 
@@ -396,7 +415,7 @@ export async function registerExpensePayment(id: string, amount: number, payment
             paidAmount: newPaidAmount,
             status: newStatus,
             paymentMethod: paymentMethod,
-            lastPaymentDate: new Date(date),
+            lastPaymentDate: safeDate,
         });
 
         revalidatePath('/expenses');
@@ -407,24 +426,7 @@ export async function registerExpensePayment(id: string, amount: number, payment
     }
 }
 
-export async function deleteExpenseAction(id: string): Promise<{ success: boolean; message?: string }> {
-    await dbConnect();
-    try {
-        const result = await ExpenseModel.findByIdAndDelete(id);
-        if (!result) {
-            return { success: false, message: "Gasto no encontrado" };
-        }
-
-        // Cascade delete transactions
-        await ExpenseTransactionModel.deleteMany({ expenseId: id });
-
-        revalidatePath('/expenses');
-        return { success: true };
-    } catch (error: any) {
-        console.error("Error deleting expense:", error);
-        return { success: false, message: error.message || "Error al eliminar gasto" };
-    }
-}
+// ... (keep deleteExpenseAction)
 
 export async function updateExpenseTransaction(id: string, data: { amount: number; paymentMethod: string; date: string; notes?: string }): Promise<{ success: boolean; message?: string }> {
     await dbConnect();
@@ -435,14 +437,9 @@ export async function updateExpenseTransaction(id: string, data: { amount: numbe
         const expense = await ExpenseModel.findById(transaction.expenseId);
         if (!expense) return { success: false, message: "Gasto asociado no encontrado" };
 
-        // Calculate new paid amount: (Current Paid - Old Transaction Amount) + New Transaction Amount
-        // Ensure we don't go below zero if data is inconsistent
+        // Calculate new paid amount
         let newPaidAmount = (expense.paidAmount || 0) - transaction.amount + data.amount;
         if (newPaidAmount < 0) newPaidAmount = 0;
-
-        // Cap at total amount (optional, but good practice to allow overpayment handling or strict cap)
-        // For flexibility, we allow it but status logic handles it. 
-        // If strict strict: if (newPaidAmount > expense.amount) newPaidAmount = expense.amount;
 
         // Determine new status
         let newStatus = expense.status;
@@ -454,20 +451,19 @@ export async function updateExpenseTransaction(id: string, data: { amount: numbe
             newStatus = 'Pendiente';
         }
 
-        // Update Expense
+        // Update Experiment
         await ExpenseModel.findByIdAndUpdate(expense._id, {
             paidAmount: newPaidAmount,
             status: newStatus,
-            // If this was the last payment, maybe update lastPaymentDate? 
-            // It's complex to find the "real" last payment if we edit an old one. 
-            // We'll leave lastPaymentDate as is or update it if the edited date is newer.
         });
+
+        const safeDate = parseSafeDate(data.date);
 
         // Update Transaction
         await ExpenseTransactionModel.findByIdAndUpdate(id, {
             amount: data.amount,
             paymentMethod: data.paymentMethod,
-            date: new Date(data.date),
+            date: safeDate,
             notes: data.notes
         });
 
