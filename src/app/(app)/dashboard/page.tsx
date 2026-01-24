@@ -142,10 +142,10 @@ export default function DashboardPage() {
                     </CardHeader>
                     <CardContent>
                         <div className="text-2xl font-bold text-rose-600 dark:text-rose-400 mt-2">
-                            ${(analytics?.globalBalance?.payables || 0).toLocaleString('es-DO', { maximumFractionDigits: 0 })}
+                            ${(analytics?.globalBalance?.payables || 0).toLocaleString('es-DO', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                         </div>
                         <p className="text-xs text-muted-foreground mt-1 font-medium">
-                            Pendientes: ${(analytics?.globalBalance?.payablesBreakdown?.['Pendiente'] || 0).toLocaleString('es-DO', { maximumFractionDigits: 0 })} + Parciales: ${(analytics?.globalBalance?.payablesBreakdown?.['Parcial'] || 0).toLocaleString('es-DO', { maximumFractionDigits: 0 })}
+                            Pendientes: ${(analytics?.globalBalance?.payablesBreakdown?.['Pendiente'] || 0).toLocaleString('es-DO', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} + Parciales: ${(analytics?.globalBalance?.payablesBreakdown?.['Parcial'] || 0).toLocaleString('es-DO', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                         </p>
                     </CardContent>
                 </Card>
