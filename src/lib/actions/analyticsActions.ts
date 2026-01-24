@@ -240,6 +240,13 @@ export async function getDashboardAnalytics(month?: string, year?: string, timez
     ]);
     const totalPayables = payables[0]?.total || 0;
 
+    // Breakdown for debugging
+    const payablesBreakdownStats = await ExpenseModel.aggregate([
+        { $match: { status: { $ne: 'Pagada' } } },
+        { $group: { _id: "$status", total: { $sum: { $subtract: ["$amount", { $ifNull: ["$paidAmount", 0] }] } } } }
+    ]);
+    const payablesBreakdown = payablesBreakdownStats.reduce((acc, curr) => ({ ...acc, [curr._id || 'Sin Status']: curr.total }), {});
+
     const netBalance = (totalReceivables + stockSummary.totalValue) - totalPayables;
 
     // 7. Actual Expenses Paid (Cash Flow Out)
@@ -262,6 +269,7 @@ export async function getDashboardAnalytics(month?: string, year?: string, timez
         globalBalance: {
             receivables: totalReceivables,
             payables: totalPayables,
+            payablesBreakdown, // Return breakdown
             net: netBalance,
             inventory: stockSummary.totalValue
         },

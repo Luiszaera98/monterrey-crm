@@ -145,7 +145,7 @@ export default function DashboardPage() {
                             ${(analytics?.globalBalance?.payables || 0).toLocaleString('es-DO', { maximumFractionDigits: 0 })}
                         </div>
                         <p className="text-xs text-muted-foreground mt-1 font-medium">
-                            Total de gastos pendientes
+                            Pendientes: ${(analytics?.globalBalance?.payablesBreakdown?.['Pendiente'] || 0).toLocaleString('es-DO', { maximumFractionDigits: 0 })} + Parciales: ${(analytics?.globalBalance?.payablesBreakdown?.['Parcial'] || 0).toLocaleString('es-DO', { maximumFractionDigits: 0 })}
                         </p>
                     </CardContent>
                 </Card>
