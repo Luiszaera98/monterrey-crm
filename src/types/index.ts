@@ -53,7 +53,7 @@ export interface InventoryMovement {
 export type InvoiceStatus = 'Pagada' | 'Pendiente' | 'Vencida' | 'Anulada' | 'Parcial' | 'Nota de Crédito Parcial';
 
 // NCF Types for Dominican Republic (DGII)
-export type NCFType = 'B01' | 'B02' | 'B04' | 'B14' | 'B15' | 'B16';
+export type NCFType = 'B01' | 'B02' | 'B04' | 'B14' | 'B15' | 'B16' | 'S/C';
 
 export const NCF_TYPES = {
     'B01': 'Crédito Fiscal',
