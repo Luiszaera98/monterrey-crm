@@ -426,7 +426,24 @@ export async function registerExpensePayment(id: string, amount: number, payment
     }
 }
 
-// ... (keep deleteExpenseAction)
+export async function deleteExpenseAction(id: string): Promise<{ success: boolean; message?: string }> {
+    await dbConnect();
+    try {
+        const result = await ExpenseModel.findByIdAndDelete(id);
+        if (!result) {
+            return { success: false, message: "Gasto no encontrado" };
+        }
+
+        // Cascade delete transactions
+        await ExpenseTransactionModel.deleteMany({ expenseId: id });
+
+        revalidatePath('/expenses');
+        return { success: true };
+    } catch (error: any) {
+        console.error("Error deleting expense:", error);
+        return { success: false, message: error.message || "Error al eliminar gasto" };
+    }
+}
 
 export async function updateExpenseTransaction(id: string, data: { amount: number; paymentMethod: string; date: string; notes?: string }): Promise<{ success: boolean; message?: string }> {
     await dbConnect();
