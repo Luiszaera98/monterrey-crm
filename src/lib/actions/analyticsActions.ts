@@ -1,7 +1,7 @@
 "use server";
 
 import dbConnect from '@/lib/db';
-import { Invoice as InvoiceModel, Payment as PaymentModel, Expense as ExpenseModel, Product as ProductModel } from '@/models';
+import { Invoice as InvoiceModel, Payment as PaymentModel, Expense as ExpenseModel, Product as ProductModel, ExpenseTransaction as ExpenseTransactionModel } from '@/models';
 import { startOfMonth, endOfMonth, subMonths, format } from 'date-fns';
 import { es } from 'date-fns/locale';
 
@@ -230,17 +230,24 @@ export async function getDashboardAnalytics(month?: string, year?: string, timez
     // 6. Global Balances (Snapshot)
     const receivables = await InvoiceModel.aggregate([
         { $match: { status: { $in: ['Pendiente', 'Parcial', 'Nota de Crédito Parcial', 'Vencida'] } } },
-        { $group: { _id: null, total: { $sum: { $subtract: ["$total", "$paidAmount"] } } } }
+        { $group: { _id: null, total: { $sum: { $subtract: ["$total", { $ifNull: ["$paidAmount", 0] }] } } } }
     ]);
     const totalReceivables = receivables[0]?.total || 0;
 
     const payables = await ExpenseModel.aggregate([
-        { $match: { status: { $in: ['Pendiente', 'Parcial'] } } },
+        { $match: { status: { $ne: 'Pagada' } } },
         { $group: { _id: null, total: { $sum: { $subtract: ["$amount", { $ifNull: ["$paidAmount", 0] }] } } } }
     ]);
     const totalPayables = payables[0]?.total || 0;
 
     const netBalance = (totalReceivables + stockSummary.totalValue) - totalPayables;
+
+    // 7. Actual Expenses Paid (Cash Flow Out)
+    const expensesPaidAgg = await ExpenseTransactionModel.aggregate([
+        { $match: { date: { $gte: currentStart, $lte: currentEnd } } },
+        { $group: { _id: null, total: { $sum: "$amount" } } }
+    ]);
+    const expensesPaid = expensesPaidAgg[0]?.total || 0;
 
     return {
         evolutionData,
@@ -257,6 +264,7 @@ export async function getDashboardAnalytics(month?: string, year?: string, timez
             payables: totalPayables,
             net: netBalance,
             inventory: stockSummary.totalValue
-        }
+        },
+        expensesPaid
     };
 }

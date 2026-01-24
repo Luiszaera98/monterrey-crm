@@ -100,16 +100,16 @@ export default function DashboardPage() {
                 <Card className="border-border shadow-sm bg-card hover:shadow-md transition-all duration-200 ring-1 ring-primary/10">
                     <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
                         <CardTitle className="text-sm font-medium text-muted-foreground">Flujo de Caja (Mes)</CardTitle>
-                        <div className={cn("p-2 rounded-lg", ((currentMonthData?.collected || 0) - (currentMonthData?.expenses || 0)) >= 0 ? "bg-emerald-100 dark:bg-emerald-900/30" : "bg-rose-100 dark:bg-rose-900/30")}>
-                            <DollarSign className={cn("h-4 w-4", ((currentMonthData?.collected || 0) - (currentMonthData?.expenses || 0)) >= 0 ? "text-emerald-600 dark:text-emerald-400" : "text-rose-600 dark:text-rose-400")} />
+                        <div className={cn("p-2 rounded-lg", ((currentMonthData?.collected || 0) - (analytics?.expensesPaid || 0)) >= 0 ? "bg-emerald-100 dark:bg-emerald-900/30" : "bg-rose-100 dark:bg-rose-900/30")}>
+                            <DollarSign className={cn("h-4 w-4", ((currentMonthData?.collected || 0) - (analytics?.expensesPaid || 0)) >= 0 ? "text-emerald-600 dark:text-emerald-400" : "text-rose-600 dark:text-rose-400")} />
                         </div>
                     </CardHeader>
                     <CardContent>
-                        <div className={cn("text-2xl font-bold mt-2", ((currentMonthData?.collected || 0) - (currentMonthData?.expenses || 0)) >= 0 ? "text-emerald-600 dark:text-emerald-400" : "text-rose-600")}>
-                            ${((currentMonthData?.collected || 0) - (currentMonthData?.expenses || 0)).toLocaleString('es-DO', { maximumFractionDigits: 0 })}
+                        <div className={cn("text-2xl font-bold mt-2", ((currentMonthData?.collected || 0) - (analytics?.expensesPaid || 0)) >= 0 ? "text-emerald-600 dark:text-emerald-400" : "text-rose-600")}>
+                            ${((currentMonthData?.collected || 0) - (analytics?.expensesPaid || 0)).toLocaleString('es-DO', { maximumFractionDigits: 0 })}
                         </div>
                         <p className="text-xs text-muted-foreground mt-1 font-medium leading-tight">
-                            Ingresos: ${(currentMonthData?.collected || 0).toLocaleString('es-DO', { maximumFractionDigits: 0 })} - Gastos: ${(currentMonthData?.expenses || 0).toLocaleString('es-DO', { maximumFractionDigits: 0 })}
+                            Ingresos: ${(currentMonthData?.collected || 0).toLocaleString('es-DO', { maximumFractionDigits: 0 })} - Pagos: ${(analytics?.expensesPaid || 0).toLocaleString('es-DO', { maximumFractionDigits: 0 })}
                         </p>
                     </CardContent>
                 </Card>
