@@ -3,6 +3,7 @@
 import React, { useEffect, useState } from 'react';
 import { getInvoiceById } from '@/lib/actions/invoiceActions';
 import { getCreditNotesByInvoice } from '@/lib/actions/paymentActions';
+import { getClientById } from '@/lib/actions/clientActions';
 import { Invoice, CreditNote, NCF_TYPES } from '@/types';
 import { format } from 'date-fns';
 import { es } from 'date-fns/locale';
@@ -20,21 +21,14 @@ export default function InvoicePrintPage({ params }: { params: { id: string } })
                     getCreditNotesByInvoice(params.id)
                 ]);
 
-                if (invoiceData && !invoiceData.clientAddress) {
+                if (invoiceData && !invoiceData.clientAddress && invoiceData.clientId && invoiceData.clientId !== 'placeholder') {
                     try {
-                        // Dynamically import to avoid circular dependencies if any or just clean separation
-                        const { getClients } = await import('@/lib/actions/clientActions');
-                        // Use invoice's client name to search.
-                        // Ideally we'd use ID, but getClients searches by name/RNC
-                        const clientRes = await getClients(1, 1, invoiceData.clientName);
-                        if (clientRes.clients && clientRes.clients.length > 0) {
-                            // Take the first match
-                            const matchedClient = clientRes.clients[0];
-                            // Update the local state object (without saving to DB here, just for display)
-                            invoiceData.clientAddress = matchedClient.address || '';
+                        const client = await getClientById(invoiceData.clientId);
+                        if (client && client.address) {
+                            invoiceData.clientAddress = client.address;
                         }
                     } catch (e) {
-                        console.error("Error patching missing address", e);
+                        console.error("Error fetching client address fallback:", e);
                     }
                 }
 

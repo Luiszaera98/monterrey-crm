@@ -63,6 +63,18 @@ export async function getClients(
     }
 }
 
+export async function getClientById(id: string): Promise<Client | null> {
+    await dbConnect();
+    try {
+        const client = await ClientModel.findById(id).lean();
+        if (!client) return null;
+        return mapClient(client);
+    } catch (error) {
+        console.error("Error fetching client by ID:", error);
+        return null;
+    }
+}
+
 export async function getContacts(): Promise<{ id: string; name: string; type: string }[]> {
     await dbConnect();
     try {
