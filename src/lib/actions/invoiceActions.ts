@@ -175,6 +175,10 @@ export async function createInvoice(data: {
             ncf = await getNextNCF(data.ncfType, session);
         }
 
+        // Fetch client to get address
+        const client = await ClientModel.findById(data.clientId).session(session || null);
+        const clientAddress = client ? client.address : '';
+
         // 4. Create Invoice
         const [newInvoice] = await InvoiceModel.create([{
             number: invoiceNumber,
@@ -183,6 +187,7 @@ export async function createInvoice(data: {
             clientId: data.clientId,
             clientName: data.clientName,
             clientRnc: data.clientRnc,
+            clientAddress: clientAddress,
             soldBy: data.soldBy,
             sellerEmail: data.sellerEmail,
             paymentTerms: data.paymentTerms,
@@ -314,12 +319,17 @@ export async function updateInvoice(id: string, data: {
         const subtotal = itemsTotal - generalDiscountAmount;
         const total = subtotal + data.tax;
 
+        // Fetch client to get address (if client changed or just to ensure it's up to date)
+        const client = await ClientModel.findById(data.clientId).session(session || null);
+        const clientAddress = client ? client.address : '';
+
         const updatedInvoice = await InvoiceModel.findByIdAndUpdate(
             id,
             {
                 clientId: data.clientId,
                 clientName: data.clientName,
                 clientRnc: data.clientRnc,
+                clientAddress: clientAddress,
                 ncfType: data.ncfType,
                 date: data.date,
                 dueDate: data.dueDate,

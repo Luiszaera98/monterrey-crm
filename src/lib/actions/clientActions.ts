@@ -14,7 +14,7 @@ function mapClient(doc: any): Client {
         rncCedula: doc.rnc || '',
         email: doc.email,
         phoneNumber: doc.phone,
-        address: doc.address,
+        address: doc.address || '',
         createdAt: doc.createdAt.toISOString(),
         updatedAt: doc.updatedAt.toISOString(),
     };

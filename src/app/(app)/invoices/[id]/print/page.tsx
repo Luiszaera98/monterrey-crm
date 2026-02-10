@@ -19,6 +19,25 @@ export default function InvoicePrintPage({ params }: { params: { id: string } })
                     getInvoiceById(params.id),
                     getCreditNotesByInvoice(params.id)
                 ]);
+
+                if (invoiceData && !invoiceData.clientAddress) {
+                    try {
+                        // Dynamically import to avoid circular dependencies if any or just clean separation
+                        const { getClients } = await import('@/lib/actions/clientActions');
+                        // Use invoice's client name to search.
+                        // Ideally we'd use ID, but getClients searches by name/RNC
+                        const clientRes = await getClients(1, 1, invoiceData.clientName);
+                        if (clientRes.clients && clientRes.clients.length > 0) {
+                            // Take the first match
+                            const matchedClient = clientRes.clients[0];
+                            // Update the local state object (without saving to DB here, just for display)
+                            invoiceData.clientAddress = matchedClient.address || '';
+                        }
+                    } catch (e) {
+                        console.error("Error patching missing address", e);
+                    }
+                }
+
                 setInvoice(invoiceData);
                 setCreditNotes(notesData);
             } catch (error) {
@@ -123,7 +142,7 @@ export default function InvoicePrintPage({ params }: { params: { id: string } })
                         </div>
                         <div className="grid grid-cols-[80px_1fr]">
                             <span className="font-bold text-gray-700">Dirección:</span>
-                            <span>{invoice.clientAddress || (invoice.clientId === 'placeholder' ? 'Av. Nuñez de Caceres, #79' : 'Dirección registrada')}</span>
+                            <span>{invoice.clientAddress || (invoice.clientId === 'placeholder' ? 'Av. Nuñez de Caceres, #79' : '')}</span>
                         </div>
                     </div>
 
