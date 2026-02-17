@@ -115,8 +115,7 @@ export default function InvoicePrintPage({ params }: { params: { id: string } })
                         {invoice.ncfType !== 'S/C' && (
                             <p><span className="font-bold">NCF:</span> {invoice.ncf || 'S/N'}</p>
                         )}
-                        <p><span className="font-bold">Fecha:</span> {format(new Date(invoice.date), 'dd/MM/yyyy')}</p>
-                        <p><span className="font-bold text-red-700">Vence:</span> {format(new Date(invoice.dueDate), 'dd/MM/yyyy')}</p>
+                        <p><span className="font-bold">Vencimiento NCF:</span> 31/12/2026</p>
                     </div>
                 </div>
             </header>
@@ -154,8 +153,12 @@ export default function InvoicePrintPage({ params }: { params: { id: string } })
                             </div>
                         </div>
                         <div className="grid grid-cols-[80px_1fr]">
-                            <span className="font-bold text-gray-700">Estado:</span>
-                            <span className="uppercase">{invoice.status}</span>
+                            <span className="font-bold text-gray-700">Fecha:</span>
+                            <span>{format(new Date(invoice.date), 'dd/MM/yyyy')}</span>
+                        </div>
+                        <div className="grid grid-cols-[80px_1fr]">
+                            <span className="font-bold text-red-700">Vence:</span>
+                            <span>{format(new Date(invoice.dueDate), 'dd/MM/yyyy')}</span>
                         </div>
                     </div>
                 </div>
@@ -237,6 +240,13 @@ export default function InvoicePrintPage({ params }: { params: { id: string } })
                     </div>
                 </div>
             </section>
+
+            {/* Notas */}
+            {invoice.notes && (
+                <section className="mt-4 pt-3 border-t border-gray-200 relative z-10">
+                    <p className="text-sm"><span className="font-bold text-gray-700">NOTA:</span> {invoice.notes}</p>
+                </section>
+            )}
 
             {/* Footer Legal */}
             <footer className="mt-auto pt-8 border-t border-gray-200 text-center text-[10px] text-gray-400 relative z-10">
